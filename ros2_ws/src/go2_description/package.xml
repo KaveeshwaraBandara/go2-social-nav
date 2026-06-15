@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>go2_description</name>
+  <version>0.1.0</version>
+  <description>
+    Unitree Go2 description repackaged for ROS 2 Humble + Gazebo Classic 11.
+    Meshes and kinematics are from the official unitreerobotics/unitree_ros
+    go2_description (ROS 1 / catkin). Phase 1 locks the 12 leg joints into a
+    fixed standing stance and drives the resulting rigid body with a
+    gazebo_ros planar_move plugin on /cmd_vel (a kinematic base, not gait).
+  </description>
+  <maintainer email="imanchanabandara@gmail.com">imanchana</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>gazebo_ros</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

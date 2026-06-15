@@ -1,0 +1,65 @@
+# ROS 2 Humble + Gazebo Classic 11 dev container.
+#
+# Default profile targets THIS laptop: Intel iGPU acceleration via /dev/dri,
+# no NVIDIA. To use an NVIDIA GPU later (your desktop PC), run with the
+# "nvidia" profile, which adds the GPU reservation — see run.sh / README.
+services:
+  ros2:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        USERNAME: dev
+        USER_UID: "1000"
+        USER_GID: "1000"
+        RENDER_GID: "992"   # host 'render' group GID (owns /dev/dri/renderD128)
+        VIDEO_GID: "44"     # host 'video' group GID  (owns /dev/dri/card*)
+    image: wso2-go2-sim:humble
+    container_name: wso2_go2_sim
+    # Host networking: your requirement, and simplest for ROS 2 DDS discovery.
+    network_mode: host
+    # Live bind-mount of our ROS workspace.
+    volumes:
+      - ./ros2_ws:/home/dev/ros2_ws
+      # X11 socket for GUI forwarding (Gazebo/RViz windows on the host display).
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/home/dev/.Xauthority:rw
+    environment:
+      - DISPLAY=${DISPLAY}
+      - XAUTHORITY=/home/dev/.Xauthority
+      - QT_X11_NO_MITSHM=1
+      # Force software GL fallback by exporting LIBGL_ALWAYS_SOFTWARE=1 before
+      # 'up' if iGPU rendering ever misbehaves under Xwayland.
+      - LIBGL_ALWAYS_SOFTWARE=${LIBGL_ALWAYS_SOFTWARE:-0}
+    # Intel iGPU passthrough for hardware-accelerated OpenGL in Gazebo.
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "992"   # render
+      - "44"    # video
+    stdin_open: true
+    tty: true
+    # ---- NVIDIA opt-in (your desktop PC / Orin later) ----------------------
+    # Enable with:  docker compose --profile nvidia up
+    # Requires nvidia-container-toolkit on that host.
+    profiles: []
+
+  # Same service, NVIDIA-enabled. Selected only with --profile nvidia.
+  ros2-nvidia:
+    extends:
+      service: ros2
+    container_name: wso2_go2_sim
+    profiles: ["nvidia"]
+    environment:
+      - DISPLAY=${DISPLAY}
+      - XAUTHORITY=/home/dev/.Xauthority
+      - QT_X11_NO_MITSHM=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

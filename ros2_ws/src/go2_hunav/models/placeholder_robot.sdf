@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<!-- Phase-3 placeholder "robot".
+     The HuNavPlugin requires a Gazebo model named after robot_name to exist
+     (it tracks the robot as a ROBOT-type agent the pedestrians react to). For
+     learning HuNavSim in isolation we want neither the heavy PMB2/nav2 stack
+     nor the Go2 yet, so this static box stands in as the robot. Phase 4
+     replaces it with the actual Go2. -->
+<sdf version="1.6">
+  <model name="robot">
+    <static>true</static>
+    <link name="base">
+      <pose>0 0 0.25 0 0 0</pose>
+      <collision name="collision">
+        <geometry><box><size>0.5 0.4 0.5</size></box></geometry>
+      </collision>
+      <visual name="visual">
+        <geometry><box><size>0.5 0.4 0.5</size></box></geometry>
+        <material>
+          <ambient>0.1 0.2 0.8 1</ambient>
+          <diffuse>0.1 0.2 0.8 1</diffuse>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

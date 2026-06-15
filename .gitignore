@@ -1,0 +1,11 @@
+# ROS 2 / colcon build artifacts (generated inside the container)
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# Editor / OS cruft
+*.swp
+*~
+.vscode/
+.idea/
+.DS_Store
