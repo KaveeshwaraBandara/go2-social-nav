@@ -1,0 +1,101 @@
+# Phase 6 benchmark scenario: STATIC GROUP TO PASS.
+#
+# Fixed, repeatable social-nav benchmark scenario for the harness. Same robot
+# start (0,0) and goal (0,4) as every other scenario; only the pedestrian
+# configuration changes.
+#
+# Layout (cafe, north half -- clear of all 5 cafe tables):
+#   - Robot drives NORTH up the aisle: (0,0) -> (0,4).
+#   - Three pedestrians stand as an interacting GROUP (shared group_id) clustered
+#     just EAST of the aisle around (1.0, 2.3). Each agent's only goal is its own
+#     standing spot, so the group stays put. The robot must pass the group on the
+#     open WEST side -- exercising the group-space proxemic metrics.
+hunav_loader:
+  ros__parameters:
+    # See agents_bench_head_on.yaml: reuse the shipped agents_cafe Regular BTs.
+    yaml_base_name: agents_cafe
+    simulator: Gazebo Classic
+    map: cafe
+    publish_people: true
+    global_goals:
+      1:                 # agent1 standing spot
+        x: 0.700
+        y: 2.100
+      2:                 # agent2 standing spot
+        x: 1.300
+        y: 2.100
+      3:                 # agent3 standing spot
+        x: 1.000
+        y: 2.700
+    agents:
+      - agent1
+      - agent2
+      - agent3
+    # Three members of one standing group (group_id: 1). Each holds its own spot:
+    # low max_vel + single goal == init_pose + non-cyclic -> effectively static.
+    agent1:
+      id: 1
+      group_id: 1
+      skin: 0
+      max_vel: 0.3
+      radius: 0.4
+      goal_radius: 0.3
+      cyclic_goals: false
+      init_pose:
+        x: 0.700
+        y: 2.100
+        z: 1.250
+        h: 0.785         # facing the group center (NE)
+      behavior:
+        type: Regular
+        configuration: 0
+        goal_force_factor: 2.0
+        obstacle_force_factor: 10.0
+        social_force_factor: 5.0
+        other_force_factor: 20.0
+      goals:
+        - 1
+    agent2:
+      id: 2
+      group_id: 1
+      skin: 1
+      max_vel: 0.3
+      radius: 0.4
+      goal_radius: 0.3
+      cyclic_goals: false
+      init_pose:
+        x: 1.300
+        y: 2.100
+        z: 1.250
+        h: 2.356         # facing the group center (NW)
+      behavior:
+        type: Regular
+        configuration: 0
+        goal_force_factor: 2.0
+        obstacle_force_factor: 10.0
+        social_force_factor: 5.0
+        other_force_factor: 20.0
+      goals:
+        - 2
+    agent3:
+      id: 3
+      group_id: 1
+      skin: 2
+      max_vel: 0.3
+      radius: 0.4
+      goal_radius: 0.3
+      cyclic_goals: false
+      init_pose:
+        x: 1.000
+        y: 2.700
+        z: 1.250
+        h: -1.571        # facing the group center (S)
+      behavior:
+        type: Regular
+        configuration: 0
+        goal_force_factor: 2.0
+        obstacle_force_factor: 10.0
+        social_force_factor: 5.0
+        other_force_factor: 20.0
+      goals:
+        - 3

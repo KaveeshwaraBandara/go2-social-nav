@@ -1,0 +1,56 @@
+# Phase 6 benchmark scenario: HEAD-ON APPROACH.
+#
+# Fixed, repeatable social-nav benchmark scenario for the harness. Every
+# controller (stub_brain, Nav2 DWA, Nav2 TEB, IT2-FLS) faces IDENTICAL
+# conditions: same robot start (0,0, hard-coded in cafe_isolated.launch.py),
+# same goal (0, 4 -- set by the benchmark launch), same pedestrian config.
+#
+# Layout (cafe, north half -- clear of all 5 cafe tables, which sit at y <= -1.6):
+#   - Robot drives straight NORTH up the central aisle: (0,0) -> (0,4).
+#   - One pedestrian paces the SAME aisle in the opposite direction, so the
+#     robot meets it HEAD-ON at roughly (0, 2.5). cyclic_goals keeps it pacing
+#     so the encounter is robust to run length / controller speed.
+hunav_loader:
+  ros__parameters:
+    # Reuse the shipped agents_cafe behavior-tree files. The agent manager loads
+    # per-agent BTs named "{yaml_base_name}__agent_{id}_bt.xml" from the image's
+    # hunav_gazebo_wrapper/behavior_trees dir; only agents_cafe/house/warehouse
+    # ship there. Our agents are all Regular behavior, so the agents_cafe Regular
+    # BTs apply unchanged -- goals/positions come from THIS file's params, not the BT.
+    yaml_base_name: agents_cafe
+    simulator: Gazebo Classic
+    map: cafe
+    publish_people: true
+    global_goals:
+      1:                 # south end of the aisle (pedestrian destination)
+        x: 0.000
+        y: -1.000
+      2:                 # north end of the aisle (pedestrian start / return)
+        x: 0.000
+        y: 5.000
+    agents:
+      - agent1
+    # Single pedestrian walking south down the aisle toward the robot.
+    agent1:
+      id: 1
+      group_id: -1
+      skin: 0
+      max_vel: 1.0
+      radius: 0.4
+      goal_radius: 0.3
+      cyclic_goals: true
+      init_pose:
+        x: 0.000
+        y: 5.000
+        z: 1.250
+        h: -1.571        # facing south (-y), straight at the robot
+      behavior:
+        type: Regular
+        configuration: 0
+        goal_force_factor: 2.0
+        obstacle_force_factor: 10.0
+        social_force_factor: 5.0
+        other_force_factor: 20.0
+      goals:
+        - 1
+        - 2

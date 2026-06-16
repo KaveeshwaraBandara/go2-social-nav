@@ -1,0 +1,51 @@
+# Phase 6 benchmark scenario: LATERAL CROSSING.
+#
+# Fixed, repeatable social-nav benchmark scenario for the harness. Same robot
+# start (0,0) and goal (0,4) as every other scenario; only the pedestrian
+# configuration changes.
+#
+# Layout (cafe, north half -- clear of all 5 cafe tables):
+#   - Robot drives straight NORTH up the central aisle: (0,0) -> (0,4).
+#   - One pedestrian walks WEST across the aisle, from (3,2) to (-3,2),
+#     crossing the robot's path perpendicularly near (0,2). cyclic_goals
+#     paces it back and forth so the crossing happens regardless of timing.
+hunav_loader:
+  ros__parameters:
+    # See agents_bench_head_on.yaml: reuse the shipped agents_cafe Regular BTs.
+    yaml_base_name: agents_cafe
+    simulator: Gazebo Classic
+    map: cafe
+    publish_people: true
+    global_goals:
+      1:                 # west side (pedestrian destination)
+        x: -3.000
+        y: 2.000
+      2:                 # east side (pedestrian start / return)
+        x: 3.000
+        y: 2.000
+    agents:
+      - agent1
+    # Single pedestrian crossing the aisle left-to-right (then back).
+    agent1:
+      id: 1
+      group_id: -1
+      skin: 1
+      max_vel: 1.0
+      radius: 0.4
+      goal_radius: 0.3
+      cyclic_goals: true
+      init_pose:
+        x: 3.000
+        y: 2.000
+        z: 1.250
+        h: 3.142         # facing west (-x), across the robot's path
+      behavior:
+        type: Regular
+        configuration: 0
+        goal_force_factor: 2.0
+        obstacle_force_factor: 10.0
+        social_force_factor: 5.0
+        other_force_factor: 20.0
+      goals:
+        - 1
+        - 2
