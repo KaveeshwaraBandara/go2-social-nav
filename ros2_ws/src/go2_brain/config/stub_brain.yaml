@@ -1,0 +1,30 @@
+# Phase 5 stub_brain parameters.
+#
+# These are the knobs for the placeholder Social Force Model + safety floor.
+# The launch file overrides goal_x/goal_y from launch arguments; everything else
+# can be tuned here without touching code. The IT2-FLS controller (Phase 7) will
+# replace the FORCE math, but a goal + the same speed caps / safety floor stay
+# meaningful, so keep this file's shape stable across that swap.
+stub_brain:
+  ros__parameters:
+    # --- Goal (map frame). Overridden by the launch args goal_x / goal_y. -----
+    goal_x: 0.0
+    goal_y: -4.0
+    goal_tolerance: 0.4        # [m] within this of the goal -> halt (done)
+
+    # --- Control loop --------------------------------------------------------
+    control_rate: 20.0         # [Hz] our real-time target; /cmd_vel publish rate
+
+    # --- Social Force Model gains (map frame) --------------------------------
+    k_attractive: 1.0          # pull toward the goal
+    k_repulsive: 2.0           # push away from each person
+    repulsion_range: 1.5       # [m] e-folding distance of the repulsion falloff
+    repulsion_cutoff: 4.0      # [m] ignore people farther than this (cheap + local)
+
+    # --- Speed clamps (the hard safety cap, applied to the force output) -----
+    max_linear_speed: 0.6      # [m/s] body-frame translation magnitude cap
+    max_angular_speed: 1.0     # [rad/s] yaw rate cap
+    k_yaw: 1.5                 # P-gain steering heading toward travel direction
+
+    # --- Stop-if-too-close safety floor (independent of the force sum) -------
+    stop_distance: 0.8         # [m] if any person is closer, zero translation

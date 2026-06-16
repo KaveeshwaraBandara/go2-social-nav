@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>go2_brain</name>
+  <version>0.1.0</version>
+  <description>
+    Phase 5 autonomy stub. A single node (stub_brain) that closes the social-nav
+    loop: it consumes the ground-truth /people perception stub and the robot's
+    /odom, runs a basic Social Force Model, and publishes /cmd_vel at 20 Hz.
+    It REPLACES teleop as the /cmd_vel producer and is a deliberately simple
+    placeholder that the IT2-FLS controller (Phase 7) will later swap in for at
+    the exact same /cmd_vel interface.
+  </description>
+  <maintainer email="imanchanabandara@gmail.com">imanchana</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>people_msgs</exec_depend>
+  <exec_depend>go2_hunav</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

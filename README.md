@@ -183,6 +183,11 @@ agents spawn, walk (agent1 moved ~2.6 m in 5 s), and `/people` streams live.
 - **Phase 4 — Go2 + HuNavSim. ✅ Done.** The Go2 is the robot the pedestrians
   track; drive it among them via `/cmd_vel`. Headless-verified: Go2 spawns +
   plugin detects it, `/people` streams, `/cmd_vel` drives it.
+- **Phase 5 — Stub brain (closed autonomy loop). ✅ Done.** New package
+  `go2_brain` with one node, `stub_brain`, that **replaces teleop as the
+  `/cmd_vel` source**: it consumes `/people` + `/odom`, runs a basic Social
+  Force Model, and publishes `/cmd_vel` at 20 Hz with a hard speed cap and a
+  stop-if-too-close safety floor.
 
 ### Run Go2 in the HuNavSim cafe (Phase 4)
 
@@ -205,3 +210,68 @@ Phase 3 with `use_go2:=true` (via the `cafe_go2` wrapper).
   is baked into the image (`docker/Dockerfile`).
 - **Scenario:** we use a regular-behavior cafe (`go2_hunav/scenarios/agents_cafe_regular.yaml`);
   agents still avoid the Go2 via the social-force model.
+
+## Stub brain — closed autonomy loop (Phase 5)
+
+Package: `ros2_ws/src/go2_brain`, node `stub_brain.py`.
+
+This is the first autonomy loop: a single node that **replaces teleop** as the
+producer of `/cmd_vel`. It subscribes to `/people` (the ground-truth perception
+stub) and `/odom` (the robot's own pose), runs a deliberately simple **Social
+Force Model**, and publishes `/cmd_vel` at **20 Hz**:
+
+- **Attractive** force toward a goal (`goal_x`, `goal_y` launch args).
+- **Repulsive** force from each nearby person, exponential falloff with distance.
+- Sum → desired world velocity → rotated into the body frame and clamped.
+- The robot also steers its heading toward its direction of travel.
+
+**Safety floor (independent of the force math):** hard linear/angular speed caps,
+plus *stop-if-too-close* — if any person is within `stop_distance` the node zeroes
+all translation and only rotates away from the nearest person.
+
+It swaps in at the **permanent `/cmd_vel` contract**, so the IT2-FLS controller
+(Phase 7) will later replace this node and nothing around it changes. No
+perception, no fuzzy logic, no Nav2 — that's all later.
+
+**Frame assumption (documented):** `/people` is in `map`; `/odom` is in `odom`.
+The scene publishes a static **identity** `map → odom` transform, so the node
+uses the `/odom` pose directly as the robot's map-frame pose (no tf2 listener).
+All tunables (gains, caps, `stop_distance`, rate) live in
+`go2_brain/config/stub_brain.yaml`.
+
+### Build
+
+```bash
+./run.sh up
+cd ~/ros2_ws
+colcon build --packages-select go2_brain
+source install/setup.bash
+```
+
+### Run + verify
+
+```bash
+# 1. Launch the Phase-4 cafe + Go2 scene AND stub_brain (instead of teleop).
+#    Default goal is (0.0, -4.0); override per run, e.g. goal_x:=2.0 goal_y:=-3.0
+ros2 launch go2_brain cafe_go2_brain.launch.py
+# RViz opens: watch the Go2 drive itself toward the goal, slowing / steering
+# around the walking pedestrians (cyan cylinders) and halting if one gets close.
+
+# 2. In another shell, watch the node's output:
+./run.sh shell
+source ~/ros2_ws/install/setup.bash
+ros2 topic echo /cmd_vel          # ~20 Hz Twist; linear.x/y drive, angular.z steers
+
+# 3. Confirm it's alive and reaching the goal:
+ros2 node list | grep stub_brain  # node is up
+# stub_brain logs "goal reached; holding position." when within goal_tolerance,
+# and warns "person within ... m: halting translation" when the safety floor fires.
+```
+
+**Verify gate:** the Go2 autonomously heads to the goal, steers around the
+pedestrians, `/cmd_vel` streams at ~20 Hz, the run is crash-free, and the robot
+reaches the goal without hitting anyone.
+
+> Logic was also validated headless by feeding the node synthetic `/odom` +
+> `/people`: with a clear path it commands velocity toward the goal; with a
+> person inside `stop_distance` it zeroes translation and rotates away.
