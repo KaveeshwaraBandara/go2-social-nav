@@ -30,7 +30,11 @@ from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
     OpaqueFunction,
+    RegisterEventHandler,
+    Shutdown,
 )
+from launch.conditions import IfCondition
+from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -94,6 +98,53 @@ def launch_setup(context, *args, **kwargs):
             f"(Nav2 dwa/teb come in 6c/6d)."
         )
 
+    # 3) Metrics recording (record:=true): hunav_evaluator (social/proxemic metrics)
+    #    + our bench_runner (owns start/stop, computes jerk, merges + logs the run).
+    record = LaunchConfiguration("record")
+    result_dir = os.path.expanduser(LaunchConfiguration("result_dir").perform(context))
+    run_id = LaunchConfiguration("run_id")
+
+    metrics_yaml = os.path.join(
+        get_package_share_directory("go2_bench"), "config", "metrics.yaml"
+    )
+    evaluator = Node(
+        package="hunav_evaluator",
+        executable="hunav_evaluator_node",
+        name="hunav_evaluator_node",
+        output="screen",
+        condition=IfCondition(record),
+        parameters=[
+            metrics_yaml,
+            {"result_file": os.path.join(result_dir, "hunav_eval"),
+             "use_sim_time": True},
+        ],
+    )
+    runner = Node(
+        package="go2_bench",
+        executable="bench_runner.py",
+        name="bench_runner",
+        output="screen",
+        condition=IfCondition(record),
+        parameters=[{
+            "controller": controller,
+            "scenario": scenario,
+            "run_id": run_id,
+            "goal_x": goal_x,
+            "goal_y": goal_y,
+            "goal_tolerance": LaunchConfiguration("goal_tolerance"),
+            "timeout": LaunchConfiguration("timeout"),
+            "result_dir": result_dir,
+            "use_sim_time": True,
+        }],
+    )
+    # When the runner finishes the run it exits -> tear down the whole launch so a
+    # batch script can sequence runs (ros2 launch ... blocks until this shutdown).
+    runner_done = RegisterEventHandler(
+        OnProcessExit(target_action=runner, on_exit=[Shutdown()]),
+        condition=IfCondition(record),
+    )
+    actions += [evaluator, runner, runner_done]
+
     return actions
 
 
@@ -108,5 +159,12 @@ def generate_launch_description():
         DeclareLaunchArgument("goal_x", default_value="0.0"),
         DeclareLaunchArgument("goal_y", default_value="4.0"),
         DeclareLaunchArgument("rviz", default_value="true"),
+        # Metrics recording (6b). record:=true adds hunav_evaluator + bench_runner,
+        # which run one timed episode and log a row to <result_dir>/benchmark.csv.
+        DeclareLaunchArgument("record", default_value="false"),
+        DeclareLaunchArgument("run_id", default_value="0"),
+        DeclareLaunchArgument("result_dir", default_value="~/ros2_ws/results"),
+        DeclareLaunchArgument("goal_tolerance", default_value="0.5"),
+        DeclareLaunchArgument("timeout", default_value="90.0"),
         OpaqueFunction(function=launch_setup),
     ])

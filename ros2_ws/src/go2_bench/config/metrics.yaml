@@ -1,0 +1,61 @@
+# Phase 6b: hunav_evaluator configuration for the benchmark harness.
+#
+# We REUSE HuNavSim's hunav_evaluator for the social / proxemic metrics it already
+# computes well (it subscribes to /human_states + /robot_states from the agent
+# manager, so it measures EVERY /cmd_vel producer identically). Our own bench_runner
+# adds the trajectory JERK (computed from /odom the same way for all controllers) and
+# owns run start/stop. See go2_bench/scripts/bench_runner.py.
+#
+# result_file is overridden by the launch to point at the results/ dir. The evaluator
+# APPENDS one row per run keyed by experiment_tag + run_id, so runs accumulate.
+hunav_evaluator_node:
+  ros__parameters:
+    # 0.0 => capture at the same rate the data is published (~100 Hz). Full fidelity.
+    frequency: 0.0
+    result_file: 'hunav_eval'
+
+    metrics:
+      # --- Core target metrics ------------------------------------------------
+      time_to_reach_goal: true          # also computed by us (start->stop); kept for cross-check
+      path_length: true                 # also computed by us; cross-check
+      minimum_distance_to_people: true  # min surface-to-surface distance to any pedestrian
+      avg_distance_to_closest_person: true
+      intimate_space_intrusions: true   # % time in intimate band (<0.45 m surface-to-surface)
+      personal_space_intrusions: true   # % time in personal band (0.45-1.2 m)
+      social_space_intrusions: true     # % time in social band (1.2-3.6 m)
+      group_intimate_space_intrusions: true
+      group_personal_space_intrusions: true
+      group_social_space_intrusions: true
+      completed: true                   # success: final pose within goal radius
+      minimum_distance_to_target: true
+      final_distance_to_target: true
+      robot_on_person_collision: true
+      person_on_robot_collision: true
+      time_not_moving: true
+      # --- Smoothness / speed bonuses ----------------------------------------
+      cumulative_heading_changes: true  # path smoothness proxy
+      avg_robot_linear_speed: true
+      avg_robot_angular_speed: true
+      avg_acceleration: true
+      avg_pedestrian_velocity: true
+      avg_closest_pedestrian_velocity: true
+
+      # --- DISABLED -----------------------------------------------------------
+      # We compute trajectory JERK ourselves (bench_runner) from /odom, resampled at a
+      # fixed rate, over the full planar velocity -- identical for every controller.
+      # hunav's avg_overacceleration uses only scalar linear_vel and a non-standard
+      # formula, so it is NOT comparable across our holonomic controllers.
+      avg_overacceleration: false
+      # SFM-force metrics: out of scope for our comparison (noisier, need careful
+      # interpretation). Disabled for a lean, focused results file.
+      social_force_on_agents: false
+      social_force_on_robot: false
+      social_work: false
+      obstacle_force_on_robot: false
+      obstacle_force_on_agents: false
+      # Singamaneni danger/surprise costs: surprise_* need a map_server we don't run.
+      danger_fear_cost: false
+      danger_panic_cost: false
+      surprise_visibility_cost: false
+      surprise_shock_cost: false
+      surprise_react_cost: false
