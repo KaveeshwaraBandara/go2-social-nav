@@ -32,11 +32,13 @@ import numpy as np
 
 import rclpy
 from rclpy.node import Node
+from rclpy.action import ActionClient
 
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
 from std_srvs.srv import Empty
 from hunav_msgs.srv import StartEvaluation
+from nav2_msgs.action import NavigateToPose
 
 
 def yaw_from_quaternion(q):
@@ -64,6 +66,11 @@ class BenchRunner(Node):
         self.timeout = float(self.declare_parameter("timeout", 90.0).value)
         self.jerk_rate = float(self.declare_parameter("jerk_rate", 50.0).value)
 
+        # Nav2 controllers (DWA/TEB) need the goal sent via the navigate_to_pose
+        # action; controllers that take the goal as a param (stub) leave this false.
+        self.nav2_goal = bool(self.declare_parameter("nav2_goal", False).value)
+        self.nav_goal_sent = False
+
         # --- Output -----------------------------------------------------------
         default_results = os.path.expanduser("~/ros2_ws/results")
         self.result_dir = os.path.expanduser(
@@ -89,6 +96,8 @@ class BenchRunner(Node):
         self.create_subscription(Odometry, "odom", self.odom_cb, 50)
         self.start_cli = self.create_client(StartEvaluation, "hunav_start_recording")
         self.stop_cli = self.create_client(Empty, "hunav_stop_recording")
+        self.nav_ac = ActionClient(self, NavigateToPose, "navigate_to_pose") \
+            if self.nav2_goal else None
         self.timer = self.create_timer(0.1, self.control_tick)  # 10 Hz state machine
 
         self.get_logger().info(
@@ -143,6 +152,9 @@ class BenchRunner(Node):
                 self.get_logger().info("RECORDING started.")
 
         elif self.state == "recording":
+            # Nav2 controllers: send the goal once, after recording has started.
+            if self.nav2_goal and not self.nav_goal_sent and self.nav_ac.server_is_ready():
+                self._send_nav2_goal()
             elapsed = self.now() - self.t_start
             _, x, y = self.latest
             if math.hypot(self.goal_x - x, self.goal_y - y) < self.goal_tolerance:
@@ -162,6 +174,17 @@ class BenchRunner(Node):
             self.get_logger().info("RUN COMPLETE.")
             self.timer.cancel()
             self.done = True  # main loop sees this and exits the process cleanly
+
+    def _send_nav2_goal(self):
+        goal = NavigateToPose.Goal()
+        goal.pose.header.frame_id = "map"
+        goal.pose.header.stamp = self.get_clock().now().to_msg()
+        goal.pose.pose.position.x = self.goal_x
+        goal.pose.pose.position.y = self.goal_y
+        goal.pose.pose.orientation.w = 1.0
+        self.nav_ac.send_goal_async(goal)
+        self.nav_goal_sent = True
+        self.get_logger().info(f"sent Nav2 goal ({self.goal_x:.2f}, {self.goal_y:.2f})")
 
     def _stop(self):
         self.get_logger().info(f"stopping: {self.end_reason}")

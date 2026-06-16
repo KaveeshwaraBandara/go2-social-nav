@@ -76,7 +76,10 @@ def launch_setup(context, *args, **kwargs):
 
     actions = [scene]
 
-    # 2) The controller under test -- the /cmd_vel producer.
+    # 2) The controller under test -- the /cmd_vel producer. nav2_goal tells the
+    #    bench_runner whether the goal is delivered via the navigate_to_pose action
+    #    (Nav2) or as a node param (stub).
+    nav2_goal = False
     if controller == "stub":
         stub_params = os.path.join(
             get_package_share_directory("go2_brain"), "config", "stub_brain.yaml"
@@ -91,11 +94,41 @@ def launch_setup(context, *args, **kwargs):
                 {"goal_x": goal_x, "goal_y": goal_y, "use_sim_time": True},
             ],
         ))
+    elif controller in ("dwa", "teb"):
+        # Nav2 baseline. It's just another /cmd_vel producer driving the same Go2.
+        nav2_goal = True
+        nav2_params = os.path.join(
+            get_package_share_directory("go2_bench"), "config",
+            "nav2_dwa.yaml" if controller == "dwa" else "nav2_teb.yaml",
+        )
+        # Feed the ground-truth /people into Nav2's costmap (NOT real perception).
+        actions.append(Node(
+            package="go2_bench", executable="people_to_cloud.py",
+            name="people_to_cloud", output="screen",
+            parameters=[{"use_sim_time": True}],
+        ))
+        # Nav2 lifecycle nodes. We launch them individually (no velocity_smoother,
+        # no collision_monitor) so the controller's RAW /cmd_vel jerk is measured.
+        nav2_nodes = [
+            ("nav2_controller", "controller_server"),
+            ("nav2_planner", "planner_server"),
+            ("nav2_behaviors", "behavior_server"),
+            ("nav2_bt_navigator", "bt_navigator"),
+        ]
+        for pkg, exe in nav2_nodes:
+            actions.append(Node(
+                package=pkg, executable=exe, name=exe, output="screen",
+                parameters=[nav2_params],
+            ))
+        actions.append(Node(
+            package="nav2_lifecycle_manager", executable="lifecycle_manager",
+            name="lifecycle_manager_navigation", output="screen",
+            parameters=[{"use_sim_time": True, "autostart": True,
+                         "node_names": [exe for _, exe in nav2_nodes]}],
+        ))
     else:
-        # Nav2 DWA/TEB controllers are wired in Phase 6c/6d.
         raise RuntimeError(
-            f"Unknown controller '{controller}'. Only 'stub' is wired so far "
-            f"(Nav2 dwa/teb come in 6c/6d)."
+            f"Unknown controller '{controller}'. Choose: stub | dwa | teb."
         )
 
     # 3) Metrics recording (record:=true): hunav_evaluator (social/proxemic metrics)
@@ -134,6 +167,7 @@ def launch_setup(context, *args, **kwargs):
             "goal_tolerance": LaunchConfiguration("goal_tolerance"),
             "timeout": LaunchConfiguration("timeout"),
             "result_dir": result_dir,
+            "nav2_goal": nav2_goal,
             "use_sim_time": True,
         }],
     )

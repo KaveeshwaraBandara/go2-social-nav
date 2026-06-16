@@ -124,6 +124,21 @@ RUN git clone --depth 1 --filter=blob:none --sparse \
     && rm -rf /opt/gazebo_models/.git
 ENV GAZEBO_MODEL_PATH=/opt/gazebo_models
 
+# ===========================================================================
+# Nav2 stack (Phase 6) — the DWA/TEB baselines the IT2-FLS controller is
+# measured against. Installed as its own layer so the expensive HuNavSim layers
+# above stay cached. navigation2 + nav2_bringup give the controller/planner/
+# bt_navigator/costmaps incl. the DWB local planner (Phase 6c DWA baseline).
+# Nav2 is just another /cmd_vel producer for our harness — it drives the same
+# planar_move Go2 over the same contract.
+# NOTE: TEB (Phase 6d) is NOT apt-available for Humble (no ros-humble-teb-local-
+# planner); it will be added separately (source build or a substitute controller).
+# ===========================================================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ros-humble-navigation2 \
+        ros-humble-nav2-bringup \
+    && rm -rf /var/lib/apt/lists/*
+
 # ---- Entry point -----------------------------------------------------------
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
