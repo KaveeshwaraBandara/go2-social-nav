@@ -201,6 +201,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
                 robots/configs/go2_config/launch/gazebo_velodyne.launch.py; do \
          sed -i "s/go2_description/go2_champ_description/g" "$f" || true; \
        done \
+    # Phase 8b traction fix: the upstream CHAMP feet (mu 0.6) SLIP on the cafe floor
+    # — legs step but the body barely translates (forward worst; turning still works).
+    # The cafe ground_plane is mu 100, so the foot is the limiter in Gazebo Classic's
+    # min() friction combine; raising foot mu to 1.5 makes them grip and push off
+    # (~0.016 -> ~0.26 m/s forward). 0.6 is unique to the foot links here.
+    && sed -i "s|<mu1>0.6</mu1>|<mu1>1.5</mu1>|g; s|<mu2>0.6</mu2>|<mu2>1.5</mu2>|g" \
+            $D/xacro/gazebo.xacro \
+    # Phase 8b gait tuning: stock gait caps forward at 0.3 m/s and lifts the feet only
+    # 0.04 m, so they SCUFF instead of planting — the robot crawls AND the leg odometry
+    # under-counts ~4-5x (it sees scuffing, not clean strides), so it looks frozen in
+    # RViz. swing_height 0.04->0.08 (clean plant-and-push) + max vel 0.3->0.6 give a
+    # believable ~0.5 m/s walk whose /odom matches ground truth (~0.9 ratio).
+    && sed -i "s/max_linear_velocity_x : 0.3/max_linear_velocity_x : 0.6/; \
+               s/swing_height : 0.04/swing_height : 0.08/; \
+               s/stance_depth : 0.01/stance_depth : 0.02/" \
+            robots/configs/go2_config/config/gait/gait.yaml \
     && mv $D robots/descriptions/go2_champ_description \
     && cd /opt/champ_ws && . /opt/ros/humble/setup.sh \
     && colcon build \
