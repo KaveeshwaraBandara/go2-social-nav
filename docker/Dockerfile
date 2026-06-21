@@ -163,6 +163,51 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /opt/teb_ws/build /opt/teb_ws/log \
     && rm -rf /var/lib/apt/lists/*
 
+# ===========================================================================
+# CHAMP walking base (Phase 8, OPTIONAL) — a SECOND, opt-in locomotion base for
+# demo videos / the human-participant study only. planar_move stays the DEFAULT
+# and the ONLY base for benchmarking and IT2-FLS eval (CLAUDE.md principle 2).
+# CHAMP consumes the SAME /cmd_vel and publishes /odom + a consistent TF tree, so
+# the brain/teleop/Nav2 baselines drive it with ZERO changes.
+#
+# Source: anujjain-dev/unitree-go2-ros2 (humble) = the CHAMP framework
+# (chvmp/champ) + a Go2 config, pinned by commit, built into its own overlay
+# (/opt/champ_ws). Gazebo Classic via gazebo_ros2_control (installed above).
+# Runtime deps not yet in the image: robot_localization (the two state-estimation
+# EKFs), ros2_controllers (joint_trajectory_controller + joint_state_broadcaster)
+# and ros2controlcli (the `ros2 control load_controller` the gazebo launch calls
+# to activate the controllers — without it the legs never actuate).
+#
+# NAME-COLLISION FIX: the upstream repo ships its OWN `go2_description` package
+# (the actuated walking xacro) whose name clashes with OUR leg-locked
+# go2_description in ros2_ws. We rename the CHAMP one to `go2_champ_description`
+# (package + every `$(find ...)` / FindPackageShare reference) so BOTH overlays
+# can be sourced together without shadowing each other.
+# ===========================================================================
+ARG CHAMP_COMMIT=fdac259518930c8f03e79189c4d0fdd00fc47483
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ros-humble-robot-localization \
+        ros-humble-ros2-controllers \
+        ros-humble-ros2controlcli \
+    && mkdir -p /opt/champ_ws/src && cd /opt/champ_ws/src \
+    && git clone https://github.com/anujjain-dev/unitree-go2-ros2.git \
+       && git -C unitree-go2-ros2 checkout ${CHAMP_COMMIT} \
+    && cd unitree-go2-ros2 \
+    && D=robots/descriptions/go2_description \
+    && for f in $D/package.xml $D/CMakeLists.txt $D/launch/description.launch.py \
+                $D/xacro/gazebo.xacro $D/xacro/leg.xacro $D/xacro/laser.xacro \
+                $D/xacro/robot.xacro $D/xacro/robot_VLP.xacro $D/xacro/velodyne.xacro \
+                robots/configs/go2_config/launch/gazebo.launch.py \
+                robots/configs/go2_config/launch/gazebo_velodyne.launch.py; do \
+         sed -i "s/go2_description/go2_champ_description/g" "$f" || true; \
+       done \
+    && mv $D robots/descriptions/go2_champ_description \
+    && cd /opt/champ_ws && . /opt/ros/humble/setup.sh \
+    && colcon build \
+    && rm -rf /opt/champ_ws/build /opt/champ_ws/log \
+    && rm -rf /var/lib/apt/lists/*
+RUN chown -R ${USER_UID}:${USER_GID} /opt/champ_ws
+
 # ---- Entry point -----------------------------------------------------------
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
@@ -175,6 +220,7 @@ WORKDIR /home/${USERNAME}/ros2_ws
 RUN echo "source /opt/ros/humble/setup.bash" >> /home/${USERNAME}/.bashrc \
     && echo "[ -f /opt/hunav_ws/install/setup.bash ] && source /opt/hunav_ws/install/setup.bash" >> /home/${USERNAME}/.bashrc \
     && echo "[ -f /opt/teb_ws/install/setup.bash ] && source /opt/teb_ws/install/setup.bash" >> /home/${USERNAME}/.bashrc \
+    && echo "[ -f /opt/champ_ws/install/setup.bash ] && source /opt/champ_ws/install/setup.bash" >> /home/${USERNAME}/.bashrc \
     && echo "[ -f /home/${USERNAME}/ros2_ws/install/setup.bash ] && source /home/${USERNAME}/ros2_ws/install/setup.bash" >> /home/${USERNAME}/.bashrc
 
 ENTRYPOINT ["/entrypoint.sh"]
