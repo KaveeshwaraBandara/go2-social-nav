@@ -856,4 +856,39 @@
     <kp>1000000.0</kp>
     <kd>1.0</kd>
   </gazebo>
+
+  <!-- Phase 6c base stability fix: the leg locked Go2 is driven kinematically by
+       libgazebo_ros_planar_move. With default friction feet (mu~1) the 4 feet GRIP
+       the ground, so during CURVED motion (linear plus angular together) the high
+       center of mass body pivots over the gripping feet and TIPS (pitch goes to
+       90deg, odom orientation gimbal locks). Straight or pure rotation motion was
+       fine, which is why teleop and the stub never exposed it; but Nav2/DWB (and any
+       controller that turns while moving) tips it within seconds. Making the feet
+       FRICTIONLESS lets the body slide as planar_move commands, with no grip induced
+       tipping torque, so the base stays planar under any /cmd_vel. Honors CLAUDE.md
+       principle 2 (planar_move never falls). The feet still provide normal support. -->
+  <gazebo reference="FL_foot">
+    <mu1>0.0</mu1>
+    <mu2>0.0</mu2>
+    <kp>1000000.0</kp>
+    <kd>1.0</kd>
+  </gazebo>
+  <gazebo reference="FR_foot">
+    <mu1>0.0</mu1>
+    <mu2>0.0</mu2>
+    <kp>1000000.0</kp>
+    <kd>1.0</kd>
+  </gazebo>
+  <gazebo reference="RL_foot">
+    <mu1>0.0</mu1>
+    <mu2>0.0</mu2>
+    <kp>1000000.0</kp>
+    <kd>1.0</kd>
+  </gazebo>
+  <gazebo reference="RR_foot">
+    <mu1>0.0</mu1>
+    <mu2>0.0</mu2>
+    <kp>1000000.0</kp>
+    <kd>1.0</kd>
+  </gazebo>
 </robot>
