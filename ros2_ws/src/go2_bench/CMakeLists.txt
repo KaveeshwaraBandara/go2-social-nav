@@ -9,6 +9,7 @@ install(
   PROGRAMS
     scripts/bench_runner.py
     scripts/people_to_cloud.py
+    scripts/compare.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

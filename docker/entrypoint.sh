@@ -10,6 +10,11 @@ if [ -f /opt/hunav_ws/install/setup.bash ]; then
     source /opt/hunav_ws/install/setup.bash
 fi
 
+# TEB local planner overlay (built from source at /opt/teb_ws -- Phase 6d).
+if [ -f /opt/teb_ws/install/setup.bash ]; then
+    source /opt/teb_ws/install/setup.bash
+fi
+
 if [ -f "$HOME/ros2_ws/install/setup.bash" ]; then
     source "$HOME/ros2_ws/install/setup.bash"
 fi

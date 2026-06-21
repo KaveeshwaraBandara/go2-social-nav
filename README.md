@@ -188,6 +188,11 @@ agents spawn, walk (agent1 moved ~2.6 m in 5 s), and `/people` streams live.
   `/cmd_vel` source**: it consumes `/people` + `/odom`, runs a basic Social
   Force Model, and publishes `/cmd_vel` at 20 Hz with a hard speed cap and a
   stop-if-too-close safety floor.
+- **Phase 6 — Benchmark harness + Nav2 DWA/TEB baselines. ✅ Done.** New package
+  `go2_bench`: a reusable harness that runs **any** `/cmd_vel`-producing brain
+  through fixed pedestrian scenarios and logs **identical** metrics. Nav2 DWA
+  (DWB) and TEB (built from source) are the first baselines, measured against the
+  Phase-5 stub; the IT2-FLS controller (Phase 7) becomes another harness client.
 
 ### Run Go2 in the HuNavSim cafe (Phase 4)
 
@@ -275,3 +280,58 @@ reaches the goal without hitting anyone.
 > Logic was also validated headless by feeding the node synthetic `/odom` +
 > `/people`: with a clear path it commands velocity toward the goal; with a
 > person inside `stop_distance` it zeroes translation and rotates away.
+
+## Benchmark harness + Nav2 baselines (Phase 6)
+
+Package: `ros2_ws/src/go2_bench`. The harness runs **any** `/cmd_vel`-producing
+controller through a fixed set of pedestrian scenarios and logs **identical**
+metrics, so the social-nav comparison (stub vs DWA vs TEB vs the future IT2-FLS)
+is valid. The harness + metrics are the real deliverable; the baselines are its
+first clients.
+
+**Pieces:**
+- **Scenarios** (`go2_hunav/scenarios/agents_bench_*.yaml`): three fixed,
+  repeatable cases — **head_on** (1 pedestrian approaching), **crossing** (1
+  pedestrian crossing the path), **group** (3-pedestrian standing group to pass).
+  Robot start fixed at (0,0), goal (0,4) up the table-free north aisle; only the
+  pedestrian config differs.
+- **Metrics:** we reuse HuNavSim's `hunav_evaluator` for the social/proxemic
+  metrics (min distance, intimate/personal/social intrusions, path, time-to-goal,
+  collisions, speeds — it reads `/robot_states` + `/human_states`, so it measures
+  every controller identically). `bench_runner` adds **trajectory jerk** computed
+  from `/odom` resampled to a fixed 50 Hz grid (one identical computation for all
+  controllers) and owns run start/stop + success/timeout.
+- **Nav2 baselines:** Nav2 is just another `/cmd_vel` producer. It has no lidar,
+  so the ground-truth `/people` is republished as a `PointCloud2` (`people_to_cloud`)
+  into the costmap's obstacle layer — same pedestrian info the brain gets, in
+  costmap form. Pedestrians live in the **local** costmap only (global plan stays
+  stable). DWA = DWB; TEB = `teb_local_planner` built from source (`/opt/teb_ws`).
+
+**Run one benchmark episode** (records a row into `results/benchmark.csv`):
+
+```bash
+ros2 launch go2_bench benchmark.launch.py scenario:=head_on controller:=stub record:=true
+# controller := stub | dwa | teb     scenario := head_on | crossing | group
+# args: record:=true (log metrics), run_id:=N, timeout:=45.0, goal_x/goal_y, rviz:=true
+```
+
+**Run the full comparison sweep** (one fresh container per run — HuNav's agent
+manager is flaky across rapid back-to-back runs):
+
+```bash
+for sc in head_on crossing group; do for c in stub dwa teb; do
+  ros2 launch go2_bench benchmark.launch.py scenario:=$sc controller:=$c \
+       record:=true rviz:=false gui:=false
+done; done
+ros2 run go2_bench compare.py        # writes results/comparison.md
+```
+
+**Outputs** (`ros2_ws/results/`): `benchmark.csv` (master table: our jerk/path/
+time/success + all `eval_*` metrics per run), `comparison.md` (stub vs DWA vs TEB
+table), per-run JSON in `runs/`, raw trajectories in `trajectories/`, and the
+evaluator's own CSV + per-timestep `_steps` files.
+
+**Verify gate:** each controller drives the Go2 to goal among pedestrians and a
+metrics row is logged identically; the comparison table shows the stub's smooth
+low-jerk motion vs the Nav2 baselines — the gap the IT2-FLS controller (Phase 7)
+must beat.

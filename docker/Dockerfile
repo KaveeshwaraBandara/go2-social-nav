@@ -139,6 +139,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-humble-nav2-bringup \
     && rm -rf /var/lib/apt/lists/*
 
+# ---- TEB local planner (Phase 6d) built from source -------------------------
+# No Humble binary exists for teb_local_planner / costmap_converter, so we build
+# them from their upstream Humble branches into an overlay (/opt/teb_ws), pinned by
+# commit for reproducibility. This gives the nav2 controller plugin
+# `teb_local_planner::TebLocalPlannerROS` -- the TEB baseline. g2o (optimizer),
+# SuiteSparse and OpenCV are the build deps.
+ARG COSTMAP_CONVERTER_COMMIT=9565858432664e9cfe0b3556e1809336c4ab06d4
+ARG TEB_COMMIT=630a22e88dc9fd45be726a762edbb5b776bef231
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ros-humble-libg2o \
+        libsuitesparse-dev \
+        libopencv-dev \
+        ros-humble-cv-bridge \
+    && mkdir -p /opt/teb_ws/src && cd /opt/teb_ws/src \
+    && git clone -b humble https://github.com/rst-tu-dortmund/costmap_converter.git \
+       && git -C costmap_converter checkout ${COSTMAP_CONVERTER_COMMIT} \
+    && git clone -b humble-devel https://github.com/rst-tu-dortmund/teb_local_planner.git \
+       && git -C teb_local_planner checkout ${TEB_COMMIT} \
+    && cd /opt/teb_ws \
+    && . /opt/ros/humble/setup.sh \
+    && colcon build --packages-up-to teb_local_planner \
+    && rm -rf /opt/teb_ws/build /opt/teb_ws/log \
+    && rm -rf /var/lib/apt/lists/*
+
 # ---- Entry point -----------------------------------------------------------
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
@@ -150,6 +174,7 @@ WORKDIR /home/${USERNAME}/ros2_ws
 # every interactive shell.
 RUN echo "source /opt/ros/humble/setup.bash" >> /home/${USERNAME}/.bashrc \
     && echo "[ -f /opt/hunav_ws/install/setup.bash ] && source /opt/hunav_ws/install/setup.bash" >> /home/${USERNAME}/.bashrc \
+    && echo "[ -f /opt/teb_ws/install/setup.bash ] && source /opt/teb_ws/install/setup.bash" >> /home/${USERNAME}/.bashrc \
     && echo "[ -f /home/${USERNAME}/ros2_ws/install/setup.bash ] && source /home/${USERNAME}/ros2_ws/install/setup.bash" >> /home/${USERNAME}/.bashrc
 
 ENTRYPOINT ["/entrypoint.sh"]
