@@ -193,6 +193,10 @@ agents spawn, walk (agent1 moved ~2.6 m in 5 s), and `/people` streams live.
   through fixed pedestrian scenarios and logs **identical** metrics. Nav2 DWA
   (DWB) and TEB (built from source) are the first baselines, measured against the
   Phase-5 stub; the IT2-FLS controller (Phase 7) becomes another harness client.
+- **Phase 8 — CHAMP walking base (OPTIONAL, demo/study only). ✅ Done.**
+  An opt-in *physically walking* Go2 base (`base:=champ`) for demo videos and the
+  human study, selectable in the cafe scene and under stub_brain. It does **not**
+  replace planar_move and is **never** used for benchmarking (see below).
 
 ### Run Go2 in the HuNavSim cafe (Phase 4)
 
@@ -335,3 +339,73 @@ evaluator's own CSV + per-timestep `_steps` files.
 metrics row is logged identically; the comparison table shows the stub's smooth
 low-jerk motion vs the Nav2 baselines — the gap the IT2-FLS controller (Phase 7)
 must beat.
+
+## CHAMP walking base (Phase 8, optional — demo/study only)
+
+By default the Go2 is a **leg-locked rigid body** slid over the ground by
+`planar_move` (Phase 1). That is the correct abstraction of Unitree's onboard
+locomotion black box, and it is **clean, repeatable, and never falls** — so it is
+the **primary base for ALL benchmarking (vs DWA/TEB) and IT2-FLS evaluation**.
+
+Phase 8 adds a **second, optional base** that makes the Go2 *physically walk* using
+the community **CHAMP** framework, so demo videos and the human-participant study
+show a walking dog instead of a sliding box. **It is never used for benchmarking** —
+its gait differs from the real robot, needs tuning, and can wobble (which would add
+noise to the proxemics/jerk metrics). Crucially it consumes the **same `/cmd_vel`**
+and publishes the **same `/odom` + TF**, so the brain/teleop/Nav2 layers are
+identical across both bases.
+
+**Source:** `anujjain-dev/unitree-go2-ros2` (humble) — CHAMP framework + a Go2
+config — vendored into the image overlay `/opt/champ_ws`, pinned by commit
+(`CHAMP_COMMIT` in the Dockerfile). Uses Gazebo Classic via `gazebo_ros2_control`.
+
+### 8a — walking Go2 in an empty world
+
+```bash
+./run.sh build        # one-time: rebuilds the image with the CHAMP overlay
+./run.sh up
+cd ~/ros2_ws && colcon build --packages-select go2_description && source install/setup.bash
+ros2 launch go2_description spawn_go2_champ.launch.py     # RViz opens; gzserver headless
+# Drive it (own focused terminal):
+./run.sh shell
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
+```
+
+This brings up the CHAMP control stack (quadruped controller → gait, state
+estimation, two robot_localization EKFs → `/odom` + `odom→base_footprint` TF) and a
+`gazebo_ros2_control`-actuated Go2 in an empty world. Like the rest of the project it
+**defaults to RViz** (`gui:=false`, `rviz:=true`) because gzclient crashes on this
+iGPU/Xwayland setup — RViz shows the RobotModel + TF + `/odom` so you watch the legs
+articulate and the body walk. **Verify gate:** teleop drives a *stably walking* Go2
+(no tipping); `/odom` + TF are sane.
+
+> The walking description package is renamed to **`go2_champ_description`** in the
+> image so it does not clash with this repo's leg-locked `go2_description`; both
+> bases can be sourced together.
+
+### 8b — CHAMP base in the cafe scene (behind `base:=`)
+
+The same cafe launches take `base:=planar_move` (default) or `base:=champ`:
+
+```bash
+ros2 launch go2_hunav cafe_go2.launch.py                 # planar_move (default, unchanged)
+ros2 launch go2_hunav cafe_go2.launch.py base:=champ     # CHAMP walking Go2 among pedestrians
+ros2 run teleop_twist_keyboard teleop_twist_keyboard     # drive it
+```
+
+`base:=champ` spawns the walking Go2 as the tracked `robot`, runs its control stack
++ a `contact_sensor` node (so `/odom` isn't frozen), and walks ~0.5 m/s. Tuning
+(foot friction + gait) lives in the Dockerfile / `go2_config`; see CLAUDE.md gotchas.
+
+### 8c — stub_brain on the CHAMP base (contract proof)
+
+The Phase-5 autonomy brain drives either base with **no changes** — `base` just
+passes through; `stub_brain.py` is identical:
+
+```bash
+ros2 launch go2_brain cafe_go2_brain.launch.py base:=champ   # autonomous walk to the goal
+```
+
+The CHAMP Go2 heads to the goal, steering around pedestrians, halting if one gets
+close — same `/cmd_vel`+`/odom` contract as planar_move. **Benchmarking stays on
+planar_move** (clean, exact odom, never falls); CHAMP is demo/study only.

@@ -5,7 +5,7 @@ find_package(ament_cmake REQUIRED)
 
 # Install model assets and launch files into the package share directory.
 install(
-  DIRECTORY dae urdf launch worlds
+  DIRECTORY dae urdf launch worlds rviz
   DESTINATION share/${PROJECT_NAME}
 )
 
