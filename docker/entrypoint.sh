@@ -15,6 +15,13 @@ if [ -f /opt/teb_ws/install/setup.bash ]; then
     source /opt/teb_ws/install/setup.bash
 fi
 
+# CHAMP walking-base overlay (built into the image at /opt/champ_ws -- Phase 8,
+# OPTIONAL). Provides the champ_* control stack + go2_config + go2_champ_description
+# for the opt-in walking base. planar_move (in ros2_ws) stays the default.
+if [ -f /opt/champ_ws/install/setup.bash ]; then
+    source /opt/champ_ws/install/setup.bash
+fi
+
 if [ -f "$HOME/ros2_ws/install/setup.bash" ]; then
     source "$HOME/ros2_ws/install/setup.bash"
 fi
