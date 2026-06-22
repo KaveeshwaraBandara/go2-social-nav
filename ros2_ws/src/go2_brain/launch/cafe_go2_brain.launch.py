@@ -13,6 +13,10 @@ The goal defaults to (0.0, -4.0): the robot spawns at the origin and heads south
 through the cafe, crossing the pedestrians' walking lanes so the repulsion /
 safety floor are actually exercised. Tune the goal with the launch args above.
 All other knobs live in go2_brain/config/stub_brain.yaml.
+
+Phase 8c: `base:=planar_move` (default) or `base:=champ` selects the base, passed
+straight through to cafe_go2. stub_brain is UNCHANGED across both — it just
+consumes /people + /odom and publishes /cmd_vel, proving the contract holds.
 """
 import os
 
@@ -39,9 +43,15 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("goal_x", default_value="0.0"),
         DeclareLaunchArgument("goal_y", default_value="-4.0"),
+        # base passthrough (Phase 8c): planar_move (default) | champ. Launch-only —
+        # the stub_brain node below is identical regardless of the base.
+        DeclareLaunchArgument("base", default_value="planar_move"),
 
-        # The full Phase-4 scene (cafe + walking pedestrians + leg-locked Go2).
-        IncludeLaunchDescription(PythonLaunchDescriptionSource(cafe_go2)),
+        # The full Phase-4 scene (cafe + walking pedestrians + the selected base).
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(cafe_go2),
+            launch_arguments={"base": LaunchConfiguration("base")}.items(),
+        ),
 
         # The autonomy brain: /people + /odom -> /cmd_vel @ 20 Hz. The goal comes
         # from the launch args; everything else from the params file. use_sim_time
