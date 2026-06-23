@@ -1,4 +1,5 @@
-<robot name="go2_description">
+<robot name="go2_description" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="lidar" default="true"/>
   <link name="base">
     <inertial>
       <origin xyz="0.021112 0 -0.005366" rpy="0 0 0" />
@@ -832,65 +833,12 @@
   </joint>
   <link name="front_camera">
   </link>
-  <!-- Hesai XT16 LiDAR -->
-<link name="hesai_xt16">
-  <inertial>
-    <mass value="0.9"/>
-    <inertia ixx="0.000166" ixy="0" ixz="0" iyy="0.000166" iyz="0" izz="0.000166"/>
-  </inertial>
-  <visual>
-    <geometry>
-      <cylinder radius="0.05" length="0.07"/>
-    </geometry>
-  </visual>
-  <collision>
-    <geometry>
-      <cylinder radius="0.05" length="0.07"/>
-    </geometry>
-  </collision>
-</link>
-
-<joint name="hesai_xt16_joint" type="fixed">
-  <parent link="base"/>
-  <child link="hesai_xt16"/>
-  <origin xyz="0.0 0.0 0.15" rpy="0 0 0"/>
-</joint>
-
-<gazebo reference="hesai_xt16">
-  <sensor type="ray" name="hesai_xt16_sensor">
-    <pose>0 0 0 0 0 0</pose>
-    <visualize>false</visualize>
-    <update_rate>10</update_rate>
-    <ray>
-      <scan>
-        <horizontal>
-          <samples>360</samples>
-          <resolution>1</resolution>
-          <min_angle>-3.14159</min_angle>
-          <max_angle>3.14159</max_angle>
-        </horizontal>
-        <vertical>
-          <samples>16</samples>
-          <resolution>1</resolution>
-          <min_angle>-0.261799</min_angle>
-          <max_angle>0.261799</max_angle>
-        </vertical>
-      </scan>
-      <range>
-        <min>0.1</min>
-        <max>30.0</max>
-        <resolution>0.01</resolution>
-      </range>
-    </ray>
-    <plugin name="gazebo_ros_lidar" filename="libgazebo_ros_ray_sensor.so">
-      <ros>
-        <remapping>~/out:=/hesai_xt16/points</remapping>
-      </ros>
-      <output_type>sensor_msgs/PointCloud2</output_type>
-      <frame_name>hesai_xt16</frame_name>
-    </plugin>
-  </sensor>
-</gazebo>
+  <!-- Velodyne VLP-16 lidar, mounted on "base" (this URDF's root link). Toggle
+       with the lidar:=true|false xacro arg (passed through from the launch
+       files as lidar:=). See go2_description/xacro/velodyne.xacro. -->
+  <xacro:if value="$(arg lidar)">
+    <xacro:include filename="$(find go2_description)/xacro/velodyne.xacro"/>
+  </xacro:if>
   <gazebo>
     <plugin name="planar_move_controller" filename="libgazebo_ros_planar_move.so">
       <ros>

@@ -39,6 +39,10 @@ Args:
   gui:=true|false   Attempt the Gazebo GUI (default false; gzclient is unstable here).
   world:=<path>     World file (default: this package's empty.world).
   robot_name:=<s>   Gazebo entity name (default go2).
+  lidar:=true|false Mount the Velodyne VLP-16 lidar (default true). Picks
+                     go2_champ_description's robot_VLP.xacro (lidar wired in,
+                     upstream-stock) instead of plain robot.xacro when true.
+                     Needs ros-humble-velodyne-simulator in the image.
 """
 import os
 
@@ -60,6 +64,7 @@ def generate_launch_description():
     use_rviz = LaunchConfiguration("rviz")
     world = LaunchConfiguration("world")
     robot_name = LaunchConfiguration("robot_name")
+    lidar = LaunchConfiguration("lidar")
 
     # Default world ships with OUR (leg-locked) go2_description package.
     default_world = os.path.join(
@@ -68,7 +73,14 @@ def generate_launch_description():
     # The CHAMP Go2 config + (renamed) walking description, from the overlay.
     go2_cfg = get_package_share_directory("go2_config")
     go2_desc = get_package_share_directory("go2_champ_description")
-    model = os.path.join(go2_desc, "xacro", "robot.xacro")
+    # lidar:=true (default) -> robot_VLP.xacro (stock upstream file that just
+    # adds an <xacro:include> of velodyne.xacro on top of robot.xacro).
+    # lidar:=false -> plain robot.xacro, no lidar link/sensor at all.
+    model = PythonExpression([
+        "'", os.path.join(go2_desc, "xacro", "robot_VLP.xacro"),
+        "' if '", lidar, "' == 'true' else '",
+        os.path.join(go2_desc, "xacro", "robot.xacro"), "'",
+    ])
     joints = os.path.join(go2_cfg, "config", "joints", "joints.yaml")
     links = os.path.join(go2_cfg, "config", "links", "links.yaml")
     gait = os.path.join(go2_cfg, "config", "gait", "gait.yaml")
@@ -81,6 +93,7 @@ def generate_launch_description():
         DeclareLaunchArgument("rviz", default_value="true"),
         DeclareLaunchArgument("world", default_value=default_world),
         DeclareLaunchArgument("robot_name", default_value="go2"),
+        DeclareLaunchArgument("lidar", default_value="true"),
     ]
 
     rviz_node = Node(

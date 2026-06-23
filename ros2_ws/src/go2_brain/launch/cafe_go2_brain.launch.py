@@ -46,11 +46,17 @@ def generate_launch_description():
         # base passthrough (Phase 8c): planar_move (default) | champ. Launch-only —
         # the stub_brain node below is identical regardless of the base.
         DeclareLaunchArgument("base", default_value="planar_move"),
+        # lidar passthrough: only takes effect when base:=champ. Mounts the
+        # Velodyne VLP-16 (default true); pass lidar:=false to omit it.
+        DeclareLaunchArgument("lidar", default_value="true"),
 
         # The full Phase-4 scene (cafe + walking pedestrians + the selected base).
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(cafe_go2),
-            launch_arguments={"base": LaunchConfiguration("base")}.items(),
+            launch_arguments={
+                "base": LaunchConfiguration("base"),
+                "lidar": LaunchConfiguration("lidar"),
+            }.items(),
         ),
 
         # The autonomy brain: /people + /odom -> /cmd_vel @ 20 Hz. The goal comes

@@ -37,11 +37,13 @@ from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessStart
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
+    Command,
     LaunchConfiguration,
     PathJoinSubstitution,
     PythonExpression,
 )
 from launch_ros.actions import Node
+from launch_ros.descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -59,6 +61,7 @@ def generate_launch_description():
     use_rviz = LaunchConfiguration("rviz")
     use_go2 = LaunchConfiguration("use_go2")
     base = LaunchConfiguration("base")
+    lidar = LaunchConfiguration("lidar")
     configuration_file = LaunchConfiguration("configuration_file")
     environment_name = LaunchConfiguration("environment_name")
     gz_obs = LaunchConfiguration("use_gazebo_obs")
@@ -99,6 +102,10 @@ def generate_launch_description():
         # = the opt-in CHAMP walking base (demo/study only; needs /opt/champ_ws).
         # Both consume the same /cmd_vel and publish /odom + TF (CLAUDE.md principle 2).
         DeclareLaunchArgument("base", default_value="planar_move"),
+        # Only takes effect when base:=champ. Mounts the Velodyne VLP-16
+        # (go2_champ_description's stock robot_VLP.xacro) instead of plain
+        # robot.xacro. Needs ros-humble-velodyne-simulator in the image.
+        DeclareLaunchArgument("lidar", default_value="true"),
     ]
 
     # --- Gazebo resource env (so the cafe models + HuNavPlugin resolve) -----
@@ -209,17 +216,20 @@ def generate_launch_description():
         ["'", use_go2, "' == 'true' and '", base, "' == 'champ'"])
 
     # --- Go2 robot, planar_move base (Phase 4) ----------------------------
-    go2_urdf = os.path.join(
-        get_package_share_directory("go2_description"), "urdf", "go2.urdf"
+    go2_xacro = os.path.join(
+        get_package_share_directory("go2_description"), "urdf", "go2.xacro"
     )
-    with open(go2_urdf, "r") as f:
-        go2_description = f.read()
     go2_rsp = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
         output="screen",
         condition=IfCondition(planar_on),
-        parameters=[{"robot_description": go2_description, "use_sim_time": True}],
+        parameters=[{
+            "robot_description": ParameterValue(
+                Command(["xacro ", go2_xacro, " lidar:=", lidar]), value_type=str
+            ),
+            "use_sim_time": True,
+        }],
     )
     spawn_go2 = Node(
         package="gazebo_ros",
@@ -246,14 +256,21 @@ def generate_launch_description():
     # scoped GroupAction those would leak and clobber the cafe scene's `rviz` (kill
     # RViz) and `robot_name` (break HuNav's robot tracking). See Phase-8a gotchas.
     champ_cfg = FindPackageShare("go2_config")
+    champ_desc = FindPackageShare("go2_champ_description")
+    # lidar:=true (default) -> robot_VLP.xacro (stock upstream robot.xacro +
+    # one <xacro:include> of velodyne.xacro). lidar:=false -> plain robot.xacro.
+    champ_model = PythonExpression([
+        "'", PathJoinSubstitution([champ_desc, "xacro", "robot_VLP.xacro"]),
+        "' if '", lidar, "' == 'true' else '",
+        PathJoinSubstitution([champ_desc, "xacro", "robot.xacro"]), "'",
+    ])
     champ_bringup_group = GroupAction(
         actions=[
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(PathJoinSubstitution(
                     [FindPackageShare("champ_bringup"), "launch", "bringup.launch.py"])),
                 launch_arguments={
-                    "description_path": PathJoinSubstitution(
-                        [FindPackageShare("go2_champ_description"), "xacro", "robot.xacro"]),
+                    "description_path": champ_model,
                     "joints_map_path": PathJoinSubstitution(
                         [champ_cfg, "config", "joints", "joints.yaml"]),
                     "links_map_path": PathJoinSubstitution(

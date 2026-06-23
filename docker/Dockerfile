@@ -189,6 +189,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-humble-robot-localization \
         ros-humble-ros2-controllers \
         ros-humble-ros2controlcli \
+        ros-humble-velodyne-simulator \
     && mkdir -p /opt/champ_ws/src && cd /opt/champ_ws/src \
     && git clone https://github.com/anujjain-dev/unitree-go2-ros2.git \
        && git -C unitree-go2-ros2 checkout ${CHAMP_COMMIT} \

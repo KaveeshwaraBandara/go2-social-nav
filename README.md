@@ -110,6 +110,14 @@ ros2 launch go2_description spawn_go2.launch.py            # GUI
 ros2 launch go2_description spawn_go2.launch.py gui:=false # headless
 ```
 
+### Lidar
+
+The Go2 carries a Velodyne VLP-16, on by default. Toggle it with `lidar:=true|false`:
+
+```bash
+ros2 launch go2_description spawn_go2.launch.py lidar:=false
+```
+
 ### Teleop (Phase 2)
 
 Drive the base from the keyboard. Run in its **own terminal that has keyboard

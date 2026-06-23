@@ -11,6 +11,8 @@ Args:
   gui:=true|false      Show the Gazebo GUI (default true). false = headless.
   world:=<path>        World file (default: this package's empty.world).
   x, y, z, yaw:=<f>    Spawn pose. z defaults to 0.33 (computed standing height).
+  lidar:=true|false    Mount the Velodyne VLP-16 (default true). Needs
+                        ros-humble-velodyne-simulator in the image.
 """
 import os
 
@@ -23,8 +25,9 @@ from launch.actions import (
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -32,9 +35,7 @@ def generate_launch_description():
     pkg_go2 = get_package_share_directory("go2_description")
     pkg_gazebo_ros = get_package_share_directory("gazebo_ros")
 
-    urdf_path = os.path.join(pkg_go2, "urdf", "go2.urdf")
-    with open(urdf_path, "r") as f:
-        robot_description = f.read()
+    xacro_path = os.path.join(pkg_go2, "urdf", "go2.xacro")
 
     default_world = os.path.join(pkg_go2, "worlds", "empty.world")
 
@@ -45,6 +46,11 @@ def generate_launch_description():
     y = LaunchConfiguration("y")
     z = LaunchConfiguration("z")
     yaw = LaunchConfiguration("yaw")
+    lidar = LaunchConfiguration("lidar")
+
+    robot_description = ParameterValue(
+        Command(["xacro ", xacro_path, " lidar:=", lidar]), value_type=str
+    )
 
     declare_args = [
         DeclareLaunchArgument("gui", default_value="true"),
@@ -53,6 +59,7 @@ def generate_launch_description():
         DeclareLaunchArgument("y", default_value="0.0"),
         DeclareLaunchArgument("z", default_value="0.33"),
         DeclareLaunchArgument("yaw", default_value="0.0"),
+        DeclareLaunchArgument("lidar", default_value="true"),
     ]
 
     # Help Gazebo Classic resolve package:// mesh URIs by adding the directory
