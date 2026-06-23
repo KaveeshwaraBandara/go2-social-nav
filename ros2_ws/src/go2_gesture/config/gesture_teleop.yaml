@@ -1,0 +1,24 @@
+gesture_teleop:
+  ros__parameters:
+    # Camera
+    camera_device: 0          # /dev/video0; change to 1 if built-in cam is wrong device
+    cap_width:     640
+    cap_height:    480
+
+    # MediaPipe detection thresholds
+    min_detection_confidence: 0.7
+    min_tracking_confidence:  0.5
+
+    # Smoothing: publish the most-common gesture over the last N frames.
+    # Increase for more stability, decrease for faster response.
+    gesture_history_len: 10
+
+    # Safety: publish zero Twist if no hand is visible for this many seconds.
+    no_hand_timeout: 0.5
+
+    # Speed limits (m/s and rad/s)
+    max_linear_speed:  0.4
+    max_angular_speed: 0.8
+
+    # /cmd_vel publish rate
+    control_rate: 20.0        # Hz

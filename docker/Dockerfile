@@ -225,6 +225,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 RUN chown -R ${USER_UID}:${USER_GID} /opt/champ_ws
 
+# ===========================================================================
+# Gesture recognition deps (Phase 9) — MediaPipe Tasks API (0.10.x+),
+# OpenCV for camera capture and the live debug window (X11-forwarded),
+# TensorFlow for tf.lite.Interpreter used by KeyPointClassifier and
+# PointHistoryClassifier. No venv needed — the container IS the isolation.
+#
+# opencv-python (not headless) because the gesture node shows a camera window
+# via the forwarded X11 display. libGL + libgthread are the runtime .so deps
+# OpenCV's GUI needs inside the container.
+# ===========================================================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgl1 \
+        libglib2.0-0 \
+        python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install --no-cache-dir \
+        "numpy<2" \
+        mediapipe \
+        opencv-python \
+        tensorflow
+
 # ---- Entry point -----------------------------------------------------------
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
