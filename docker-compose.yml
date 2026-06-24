@@ -34,6 +34,8 @@ services:
     # Intel iGPU passthrough for hardware-accelerated OpenGL in Gazebo.
     devices:
       - /dev/dri:/dev/dri
+      - /dev/video0:/dev/video0   # webcam for gesture recognition (Phase 9)
+      - /dev/video1:/dev/video1   # secondary video device if present
     group_add:
       - "992"   # render
       - "44"    # video

@@ -22,12 +22,15 @@ def generate_launch_description():
     )
     return LaunchDescription([
         DeclareLaunchArgument("base", default_value="planar_move"),
+        # Only takes effect when base:=champ. See cafe_isolated.launch.py.
+        DeclareLaunchArgument("lidar", default_value="true"),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(cafe),
             launch_arguments={
                 "use_go2": "true",
                 "rviz": "true",
                 "base": LaunchConfiguration("base"),
+                "lidar": LaunchConfiguration("lidar"),
             }.items(),
         )
     ])

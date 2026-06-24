@@ -110,6 +110,14 @@ ros2 launch go2_description spawn_go2.launch.py            # GUI
 ros2 launch go2_description spawn_go2.launch.py gui:=false # headless
 ```
 
+### Lidar
+
+The Go2 carries a Velodyne VLP-16, on by default. Toggle it with `lidar:=true|false`:
+
+```bash
+ros2 launch go2_description spawn_go2.launch.py lidar:=false
+```
+
 ### Teleop (Phase 2)
 
 Drive the base from the keyboard. Run in its **own terminal that has keyboard
@@ -197,6 +205,13 @@ agents spawn, walk (agent1 moved ~2.6 m in 5 s), and `/people` streams live.
   An opt-in *physically walking* Go2 base (`base:=champ`) for demo videos and the
   human study, selectable in the cafe scene and under stub_brain. It does **not**
   replace planar_move and is **never** used for benchmarking (see below).
+- **Phase 9 — Hand-gesture teleop. ✅ Done.** New package `go2_gesture`: a webcam
+  + MediaPipe HandLandmarker + TFLite MLP classify live hand signs and publish
+  `geometry_msgs/Twist` on `/cmd_vel` at 20 Hz. Drop-in replacement for
+  `teleop_twist_keyboard` — launch it in a new shell against any robot scene.
+  Five gesture groups (palm/stop, stop\_inverted/fist, call/mute, one, two\_up)
+  cover stop, forward, backward, turn-left, turn-right. Safety timeout publishes
+  a zero Twist when no hand is visible.
 
 ### Run Go2 in the HuNavSim cafe (Phase 4)
 
@@ -409,3 +424,141 @@ ros2 launch go2_brain cafe_go2_brain.launch.py base:=champ   # autonomous walk t
 The CHAMP Go2 heads to the goal, steering around pedestrians, halting if one gets
 close — same `/cmd_vel`+`/odom` contract as planar_move. **Benchmarking stays on
 planar_move** (clean, exact odom, never falls); CHAMP is demo/study only.
+
+## Hand-gesture teleop (Phase 9)
+
+Package: `ros2_ws/src/go2_gesture`, node `gesture_teleop.py`.
+
+A real-time hand-gesture controller that acts as a **drop-in replacement for
+`teleop_twist_keyboard`**: launch it in a new shell against any already-running
+robot scene and it immediately becomes the `/cmd_vel` source. It reads the host
+webcam, detects hand landmarks with **MediaPipe HandLandmarker** (Tasks API,
+`.task` bundle), classifies the hand sign with a **TFLite MLP** (`KeyPointClassifier`),
+smooths detections over a rolling history window, and publishes
+`geometry_msgs/Twist` on `/cmd_vel` at **20 Hz** — the same permanent control
+contract as every other brain in this project.
+
+### Gesture → command mapping
+
+| Gesture(s) | Command | `linear.x` | `angular.z` |
+|---|---|---|---|
+| `palm` **or** `stop` | full stop | 0 | 0 |
+| `stop_inverted` **or** `fist` | forward | +`max_linear` | 0 |
+| `call` **or** `mute` | backward | −`max_linear` | 0 |
+| `one` | turn left | 0 | +`max_angular` |
+| `two_up` | turn right | 0 | −`max_angular` |
+| *(anything else / no hand)* | full stop | 0 | 0 |
+
+Two gestures are accepted for stop/forward/backward so you can switch between
+them if one is mis-classified in your lighting conditions. Label strings are
+those in `model/keypoint_classifier/keypoint_classifier_label.csv`; the
+classifier was trained on 18 classes (call, dislike, fist, four, like, mute,
+ok, one, palm, peace, peace\_inverted, rock, stop, stop\_inverted, three,
+three2, two\_up, two\_up\_inverted).
+
+### Safety
+
+**Smoothing:** the raw per-frame classification is buffered in a
+`deque(maxlen=gesture_history_len)` (default 10 frames ≈ 0.3 s at 30 fps);
+the most-common label in that window is the active command. This eliminates
+single-frame misclassifications without adding meaningful latency.
+
+**History reset:** when the hand leaves the camera frame the history deque is
+cleared immediately, so the next gesture you show starts a fresh vote rather
+than having to "vote out" the previous one.
+
+**No-hand timeout:** if no hand landmark is detected for more than
+`no_hand_timeout` seconds (default 0.5 s), the publish timer sends a zero
+`Twist` regardless of the last known gesture. The robot stops.
+
+### Tech stack
+
+| Component | Library / version |
+|---|---|
+| Hand landmark detection | MediaPipe `HandLandmarker` Tasks API (≥ 0.10) |
+| Hand sign classification | TFLite MLP via `tf.lite.Interpreter` (TensorFlow ≥ 2.x) |
+| Camera capture + display | OpenCV (`opencv-python`, non-headless) |
+| Threading | Camera + `cv.imshow` on main thread; `rclpy.spin` in background daemon |
+
+The three ML helpers from the source gesture repo (`KeyPointClassifier`,
+landmark preprocessing) are **inlined** directly into `gesture_teleop.py` to
+avoid colcon-install import-path issues — no local module dependencies.
+
+Model files are bundled inside the package (`model/`) and found at runtime via
+`get_package_share_directory('go2_gesture')`, so paths are correct whether you
+`colcon build` in the container or run from the bind-mounted workspace.
+
+### Dockerfile additions (Phase 9)
+
+The gesture deps are a single new layer in `docker/Dockerfile`, installed as
+root before the `USER` switch so they land in the system Python 3.10 (same
+Python that owns `rclpy` — no venv needed):
+
+```dockerfile
+RUN apt-get install -y libgl1 libglib2.0-0 python3-pip
+RUN pip3 install "numpy<2" mediapipe opencv-python tensorflow
+```
+
+`numpy<2` is pinned because the apt-installed `scipy` and `pandas` in the
+container were compiled against NumPy 1.x; pip's latest NumPy (2.x) breaks
+their C extensions with a binary ABI mismatch. Pinning to 1.26.x keeps
+everything compatible.
+
+`docker-compose.yml` adds `/dev/video0` and `/dev/video1` to `devices` so the
+container user (`dev`, already in the `video` group) can open the webcam.
+
+### Build
+
+One-time image rebuild required (new Dockerfile layer):
+
+```bash
+./run.sh build      # pulls and installs mediapipe + opencv + tensorflow (~10 min)
+```
+
+Then build the package inside the container (only needed once, or after source
+changes — the bind-mount means edits on the host are visible immediately):
+
+```bash
+./run.sh up
+cd ~/ros2_ws
+colcon build --packages-select go2_gesture
+source install/setup.bash
+```
+
+### Run
+
+Launch any robot scene first, then gesture teleop in a second shell — exactly
+the same workflow as `teleop_twist_keyboard`:
+
+```bash
+# Terminal 1 — any scene, e.g.:
+ros2 launch go2_description spawn_go2.launch.py
+# or:
+ros2 launch go2_hunav cafe_go2.launch.py
+
+# Terminal 2 (./run.sh shell):
+source ~/ros2_ws/install/setup.bash
+ros2 launch go2_gesture gesture_teleop.launch.py
+```
+
+A camera window opens showing the live feed with a green bounding box around
+the detected hand, the gesture label, and a HUD line showing the exact
+`vx` / `wz` values currently being published. Press **ESC** in that window for
+a clean shutdown (publishes a stop before exiting).
+
+Optional overrides:
+
+```bash
+ros2 launch go2_gesture gesture_teleop.launch.py camera_device:=1
+ros2 launch go2_gesture gesture_teleop.launch.py max_linear_speed:=0.3 max_angular_speed:=0.6
+```
+
+All tunables (speeds, detection thresholds, history length, timeout, publish
+rate) live in `go2_gesture/config/gesture_teleop.yaml`.
+
+### Verify gate
+
+The camera window opens, hand landmarks are detected, the gesture label updates
+in real time, and `ros2 topic echo /cmd_vel` confirms Twist messages at ~20 Hz
+that match the active gesture. Robot moves correctly with each gesture; dropping
+the hand out of frame stops the robot within 0.5 s.
