@@ -1,0 +1,39 @@
+# Phase 7 it2fls_brain parameters.
+#
+# The IT2-FLS controller. Same shape as stub_brain.yaml (goal + speed caps + the
+# stop-if-too-close safety floor stay meaningful), plus the fuzzy-specific knobs:
+# repulsion is now SCALED by the fuzzy caution, and an explicit jerk/acceleration
+# limiter enforces the proposal's smoothness guarantee.
+#
+# Tune the fuzzy MEMBERSHIP FUNCTIONS themselves (near/med/far distances, FOU
+# width, etc.) in it2_fls.py -- those are the fuzzy design, not runtime params.
+it2fls_brain:
+  ros__parameters:
+    # --- Goal (map frame). Overridden by launch args goal_x / goal_y. --------
+    goal_x: 0.0
+    goal_y: 4.0
+    goal_tolerance: 0.4        # [m] within this of the goal -> halt (done)
+
+    # --- Control loop --------------------------------------------------------
+    control_rate: 20.0         # [Hz] /cmd_vel publish rate (real-time target)
+
+    # --- Attraction + fuzzy-scaled repulsion ---------------------------------
+    k_attractive: 1.0          # pull toward the goal
+    k_repulsive: 2.5           # per-person repulsion, MULTIPLIED by fuzzy caution
+    repulsion_range: 1.2       # [m] e-folding distance of the repulsion falloff
+    person_cutoff: 5.0         # [m] ignore people farther than this
+    caution_slowdown: 0.7      # max-caution cuts the speed cap by up to this fraction
+
+    # --- Speed clamps + heading ----------------------------------------------
+    max_linear_speed: 0.6      # [m/s] body-frame translation magnitude cap
+    max_angular_speed: 1.0     # [rad/s] yaw rate cap
+    k_yaw: 1.5                 # P-gain steering heading toward travel direction
+
+    # --- Jerk / acceleration limiter (formal smoothness) ---------------------
+    max_linear_accel: 0.8      # [m/s^2]
+    max_linear_jerk: 2.5       # [m/s^3]  <-- the bounded-jerk guarantee
+    max_angular_accel: 2.5     # [rad/s^2]
+    max_angular_jerk: 8.0      # [rad/s^3]
+
+    # --- Stop-if-too-close safety floor (independent of the fuzzy maths) -----
+    stop_distance: 0.8         # [m] if any person is closer, zero translation

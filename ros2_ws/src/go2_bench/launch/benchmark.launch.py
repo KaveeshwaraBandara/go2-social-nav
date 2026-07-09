@@ -94,6 +94,22 @@ def launch_setup(context, *args, **kwargs):
                 {"goal_x": goal_x, "goal_y": goal_y, "use_sim_time": True},
             ],
         ))
+    elif controller == "it2fls":
+        # Phase 7: the Interval Type-2 Fuzzy Logic controller. Just another
+        # /cmd_vel producer taking the goal as a param -- same wiring as stub.
+        it2_params = os.path.join(
+            get_package_share_directory("go2_brain"), "config", "it2fls_brain.yaml"
+        )
+        actions.append(Node(
+            package="go2_brain",
+            executable="it2fls_brain.py",
+            name="it2fls_brain",
+            output="screen",
+            parameters=[
+                it2_params,
+                {"goal_x": goal_x, "goal_y": goal_y, "use_sim_time": True},
+            ],
+        ))
     elif controller in ("dwa", "teb"):
         # Nav2 baseline. It's just another /cmd_vel producer driving the same Go2.
         nav2_goal = True
@@ -128,7 +144,7 @@ def launch_setup(context, *args, **kwargs):
         ))
     else:
         raise RuntimeError(
-            f"Unknown controller '{controller}'. Choose: stub | dwa | teb."
+            f"Unknown controller '{controller}'. Choose: stub | it2fls | dwa | teb."
         )
 
     # 3) Metrics recording (record:=true): hunav_evaluator (social/proxemic metrics)
@@ -189,7 +205,7 @@ def generate_launch_description():
             description="Benchmark scenario: head_on | crossing | group"),
         DeclareLaunchArgument(
             "controller", default_value="stub",
-            description="Controller under test: stub (Nav2 dwa/teb in 6c/6d)"),
+            description="Controller under test: stub | it2fls | dwa | teb"),
         DeclareLaunchArgument("goal_x", default_value="0.0"),
         DeclareLaunchArgument("goal_y", default_value="4.0"),
         DeclareLaunchArgument("rviz", default_value="true"),
