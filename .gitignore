@@ -3,6 +3,16 @@ ros2_ws/build/
 ros2_ws/install/
 ros2_ws/log/
 
+# Python bytecode (the perception packages are plain Python)
+__pycache__/
+*.py[cod]
+
+# Recorded rosbags are NEVER stored in this repo (5.4 GB+). They live on the
+# fusion-lab bench and are bind-mounted in read-only; only the replay-drive
+# capability lives here. See CLAUDE.md, "Bag-driven offline perception".
+*.db3
+ros2_ws/**/bags/
+
 # Editor / OS cruft
 *.swp
 *~
