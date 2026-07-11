@@ -47,6 +47,7 @@ from pathlib import Path
 import numpy as np
 
 from ..association import frustum_association
+from ..lidar import crop_range, remove_ground_ransac
 from .go2 import Go2Rig
 from .go2_tracking import DEFAULT_DEDUP_RADIUS_M, fused_to_detections, odom_from_velo
 
@@ -71,9 +72,21 @@ class Go2PerceptionProducer:
     detector: object | None = None       # any .detect(image) -> list[Detection]
     tracker: Tracker = field(default_factory=Tracker)
     labels: frozenset[str] | None = DEFAULT_LABELS
-    cluster_eps: float = 0.6
-    min_cluster_pts: int = 8
+
+    # --- fusion parameters: these ARE the values validated on the bench ------
+    # (scripts/run_go2_tracking.py in lidar-cam-fusion-lab). Do not "tune" them
+    # casually — the bench results were produced with exactly these.
+    crop_x: tuple[float, float] = (0.0, 15.0)
+    crop_y: tuple[float, float] = (-8.0, 8.0)
+    crop_z: tuple[float, float] = (-1.0, 2.5)
+    ground_distance_threshold: float = 0.08
+    cluster_eps: float = 0.45
+    min_cluster_pts: int = 6
     dedup_radius_m: float = DEFAULT_DEDUP_RADIUS_M
+
+    #: The Tracker/Lifecycle STOCK defaults already equal the bench's settings
+    #: (max_speed 2.0, gate_slack 0.25, min_hits 3, max_coast 1.5,
+    #: min_birth_support 8), so a plain Tracker() is the validated one.
 
     #: Stated, not assumed: see the module docstring.
     assumes_stationary_robot: bool = True
@@ -101,9 +114,25 @@ class Go2PerceptionProducer:
                 "Go2PerceptionProducer has no detector. Inject one "
                 "(e.g. fusion_lab.YoloDetector()) or call track() with detections."
             )
+
+        # CROP, then GROUND-REMOVE, before any frustum is cut. Both are
+        # load-bearing, not tidiness: the frustum of a 2D box is a long cone, and
+        # the FLOOR runs through all of it. Left in, DBSCAN happily clusters a
+        # slab of floor and hands back a "person" centroid metres from the real
+        # one — or the true body fails min_cluster_pts and the person vanishes.
+        points = crop_range(frame.points, x_range=self.crop_x,
+                            y_range=self.crop_y, z_range=self.crop_z)
+        points, _ = remove_ground_ransac(
+            points, distance_threshold=self.ground_distance_threshold)
+
+        # Filter to classes of interest BEFORE fusion: a non-person box (chair,
+        # tv) otherwise cuts its own frustum and competes for the same cluster.
         boxes = self.detector.detect(frame.image)
+        if self.labels is not None:
+            boxes = [b for b in boxes if b.label in self.labels]
+
         fused = frustum_association(
-            frame.points,
+            points,
             boxes,
             self.rig.calib,
             self.rig.img_width,

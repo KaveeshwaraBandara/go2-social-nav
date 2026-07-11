@@ -21,6 +21,11 @@ services:
     # Live bind-mount of our ROS workspace.
     volumes:
       - ./ros2_ws:/home/dev/ros2_ws
+      # Recorded Go2 rosbags for offline perception replay (Phase 10).
+      # READ-ONLY, and deliberately OUTSIDE the repo: they are 5.4 GB and belong
+      # to the fusion-lab bench. This repo holds the replay-drive capability, not
+      # the bag storage. Override the host path with GO2_BAGS=/some/where.
+      - ${GO2_BAGS:-$HOME/lidar-cam-fusion-lab/data/go2_bags}:/home/dev/bags:ro
       # X11 socket for GUI forwarding (Gazebo/RViz windows on the host display).
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/home/dev/.Xauthority:rw

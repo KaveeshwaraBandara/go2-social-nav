@@ -17,4 +17,11 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
+# The OFFLINE DRIVER: bag -> fusion -> tracker -> Track. Not a node — it neither
+# publishes nor subscribes; it is how the producer runs at the desk with no robot.
+install(
+  PROGRAMS scripts/replay_bag.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 ament_package()
