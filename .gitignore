@@ -13,6 +13,11 @@ __pycache__/
 *.db3
 ros2_ws/**/bags/
 
+# Model weights. YOLO weights are baked into the image at /opt/models/yolov8n.pt
+# so replay is offline and reproducible; ultralytics also drops a copy into the
+# CWD on first use, which must never be committed.
+*.pt
+
 # Rendered perception replays (annotated PNGs + mp4, ~100 MB per run). Fully
 # reproducible from the bag via `ros2 run fusion_lab visualize_replay.py`, so
 # they are artifacts, not source. The few showcase stills used by README are
