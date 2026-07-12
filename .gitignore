@@ -13,6 +13,12 @@ __pycache__/
 *.db3
 ros2_ws/**/bags/
 
+# Rendered perception replays (annotated PNGs + mp4, ~100 MB per run). Fully
+# reproducible from the bag via `ros2 run fusion_lab visualize_replay.py`, so
+# they are artifacts, not source. The few showcase stills used by README are
+# committed under docs/images/ instead.
+outputs/
+
 # Editor / OS cruft
 *.swp
 *~
