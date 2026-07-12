@@ -3,6 +3,27 @@ ros2_ws/build/
 ros2_ws/install/
 ros2_ws/log/
 
+# Python bytecode (the perception packages are plain Python)
+__pycache__/
+*.py[cod]
+
+# Recorded rosbags are NEVER stored in this repo (5.4 GB+). They live on the
+# fusion-lab bench and are bind-mounted in read-only; only the replay-drive
+# capability lives here. See CLAUDE.md, "Bag-driven offline perception".
+*.db3
+ros2_ws/**/bags/
+
+# Model weights. YOLO weights are baked into the image at /opt/models/yolov8n.pt
+# so replay is offline and reproducible; ultralytics also drops a copy into the
+# CWD on first use, which must never be committed.
+*.pt
+
+# Rendered perception replays (annotated PNGs + mp4, ~100 MB per run). Fully
+# reproducible from the bag via `ros2 run fusion_lab visualize_replay.py`, so
+# they are artifacts, not source. The few showcase stills used by README are
+# committed under docs/images/ instead.
+outputs/
+
 # Editor / OS cruft
 *.swp
 *~

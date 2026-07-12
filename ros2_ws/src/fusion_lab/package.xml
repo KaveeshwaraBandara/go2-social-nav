@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>fusion_lab</name>
+  <version>0.1.0</version>
+  <description>
+    THE REAL-PERCEPTION PRODUCER (Phase 10). LiDAR+camera fusion core
+    (calibration, frustum association, clustering, Go2Rig) plus the adapters
+    that drive it from a recorded Go2 rosbag. Composed by
+    `adapters/go2_producer.py` into: frame -> YOLO -> fuse -> Detection3D ->
+    Tracker -> Track.
+
+    It emits the canonical `Track` contract (package `tracking`) and NOTHING
+    else. Dependency direction is one-way: fusion_lab -> tracking. The IT2-FLS
+    controller never imports this package, and this package never imports the
+    controller.
+
+    NO rclpy in the core — it is pure numpy, so it survives Foxy (robot) /
+    Humble (dev) / Jazzy (lab) unchanged. ROS appears in exactly one place, the
+    bag reader (adapters/go2_bag.py), which imports rclpy lazily INSIDE a
+    function purely to deserialize recorded messages.
+  </description>
+  <maintainer email="imanchanabandara@gmail.com">imanchana</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <!-- The canonical track contract. The ONLY package fusion_lab depends on. -->
+  <exec_depend>tracking</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+
+  <!-- Bag replay only (adapters/go2_bag.py): lazily imported to deserialize
+       recorded messages. The fusion core itself needs none of these. -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>sensor_msgs_py</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

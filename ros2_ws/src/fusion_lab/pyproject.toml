@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fusion_lab"
+version = "0.1.0"
+description = "LiDAR + camera object association lab (learning project)"
+readme = "../../README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy<2.0",
+    "scipy>=1.11",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fusion_lab*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.black]
+line-length = 100

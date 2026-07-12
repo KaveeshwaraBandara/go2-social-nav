@@ -32,8 +32,12 @@ docker/
   Dockerfile        # osrf/ros:humble-desktop + Gazebo Classic 11 + tools
   entrypoint.sh     # sources ROS + workspace overlay
 ros2_ws/src/        # our ROS 2 packages (live bind-mount into the container)
-docker-compose.yml  # service def: host net, X11, /dev/dri, bind-mount
+  tracking/         # THE canonical Track contract + tracker (pure stdlib, no ROS)
+  fusion_lab/       # real-perception producer: LiDAR+camera fusion, bag replay
+docs/images/        # showcase stills used by this README
+docker-compose.yml  # service def: host net, X11, /dev/dri, bind-mounts (incl. bags)
 run.sh              # wrapper: X11 grant/revoke + compose build/up/shell/down
+outputs/            # rendered replays (gitignored — reproducible from the bag)
 ```
 
 ## Quick start
@@ -212,6 +216,13 @@ agents spawn, walk (agent1 moved ~2.6 m in 5 s), and `/people` streams live.
   Five gesture groups (palm/stop, stop\_inverted/fist, call/mute, one, two\_up)
   cover stop, forward, backward, turn-left, turn-right. Safety timeout publishes
   a zero Twist when no hand is visible.
+- **Phase 10 — Real perception producer + the canonical track contract. ✅ Done.**
+  Two new packages migrated in from `lidar-cam-fusion-lab`: `tracking` (the frozen
+  `Track` contract + the tracker) and `fusion_lab` (LiDAR/camera fusion). Together
+  they form a **real-perception producer** that turns a recorded Go2 rosbag into
+  tracked people — `bag → fusion → tracker → Track` — runnable at the desk with no
+  robot. Verified **bit-for-bit against the fusion-lab bench**. Perception plumbing
+  only: no controller work, and `stub_brain` is unchanged. See below.
 
 ### Run Go2 in the HuNavSim cafe (Phase 4)
 
@@ -562,3 +573,153 @@ The camera window opens, hand landmarks are detected, the gesture label updates
 in real time, and `ros2 topic echo /cmd_vel` confirms Twist messages at ~20 Hz
 that match the active gesture. Robot moves correctly with each gesture; dropping
 the hand out of frame stops the robot within 0.5 s.
+
+---
+
+## Real perception producer (Phase 10)
+
+Until now, perception was free: brain nodes read HuNavSim's ground-truth `/people`
+topic. Phase 10 adds the **real** thing — a LiDAR + camera pipeline that finds and
+tracks actual people from a recorded Go2 rosbag, with no robot attached and no live
+topics. This is what lets the IT2-FLS controller (Phase 7) be validated against real
+recorded perception at the desk, long before hardware access.
+
+### The one interface that makes this work
+
+The system is built around **one track type**, with **interchangeable producers**
+behind it. The controller neither knows nor cares which is upstream:
+
+```
+   oracle (/people ground truth + injectable noise) ─┐
+   HuNavSim (sim)                                    ├──> Track ──> IT2-FLS controller
+   bag → fusion → tracker (real perception)         ─┘
+```
+
+`Track` (`ros2_ws/src/tracking/tracking/track.py`) is a frozen dataclass carrying
+`id, label, x/y/z, vx/vy, heading, pos_std, vel_std, confidence, timestamp,
+time_since_update, age, frame_id`. Two properties matter more than they look:
+
+- **It depends on nothing.** Pure Python stdlib — no `rclpy`, no numpy. That is what
+  lets one type survive **Foxy** (robot) / **Humble** (dev) / **Jazzy** (lab) unchanged.
+- **It carries uncertainty.** `pos_std` / `vel_std` come straight from the Kalman
+  covariance. The *interval* type-2 fuzzifier sizes its footprint of uncertainty from
+  them. `people_msgs/Person` has no uncertainty field — adopting it as the interface
+  would have forced the controller to invent its FOU from a constant, quietly reducing
+  IT2 to T1. That is why `Track`, not `people_msgs`, is canonical.
+
+`/people` is **not deleted** — it is demoted from *interface* to *source*, and
+`stub_brain` still consumes it directly, unchanged.
+
+### The pipeline
+
+```
+rosbag  →  crop + RANSAC ground removal  →  YOLOv8 person boxes
+        →  frustum association (box → 3D centroid, DBSCAN, dedup)
+        →  Detection3D  →  tracker (association + CV Kalman + lifecycle)
+        →  Track
+```
+
+Two new packages, both **pure numpy — no `rclpy` in the producer core**:
+
+| Package | Role |
+|---|---|
+| `tracking` | The canonical `Track` contract + the tracker. Zero dependencies. |
+| `fusion_lab` | Fusion core (calibration, association, `Go2Rig`) + Go2 bag adapters + the producer. |
+
+ROS appears in exactly **one** place — `adapters/go2_bag.py` imports `rclpy` lazily
+inside a function, purely to deserialize recorded messages.
+
+### Results — bit-for-bit parity with the fusion-lab bench
+
+The migrated producer was run against the same bag and window as the lab's validated
+`run_go2_tracking.py`, and every emitted track compared field by field:
+
+| | |
+|---|---|
+| Track rows compared | **293 / 293** matched |
+| Max Δ position (x, y) | **0.00e+00** |
+| Max Δ velocity (vx, vy) | **0.00e+00** |
+| Max Δ uncertainty (`pos_std`, `vel_std`) | **0.00e+00** |
+| Distinct track ids | **13 / 13** identical |
+
+**The migration did not change the science** — the numbers behind the fusion-lab
+validation still hold in this repo. Full-bag replay: 360 frames over 75 s at ~5.5
+frames/s on CPU.
+
+### What it looks like
+
+Two people tracked as **distinct** ids — `#2` mid-stride at 1.0 m/s (arrow along
+travel), `#1` near-stationary at 0.1 m/s. Coloured dots are the LiDAR returns that
+survived crop + ground-removal, projected back into the image: they land *on the
+bodies*, not the floor. Right panel is the bird's-eye view in the `odom` frame.
+
+![Two people tracked as distinct ids](docs/images/perception_two_people.jpg)
+
+The behaviour that matters most for a social controller — **occlusion**. Both people
+have walked out of the camera's view. The tracker does not drop them: it marks them
+`COASTING` (hollow markers), dead-reckons them forward, and **grows the uncertainty
+rings** (`pos_std` 0.30 → 0.66 m). A controller should widen its margins around a
+person it can no longer see, and this is the signal that tells it to.
+
+![Tracks coasting through an occlusion, uncertainty growing](docs/images/perception_coasting.jpg)
+
+### Run it
+
+The bags are **not** in this repo (5.4 GB — they live on the fusion-lab bench).
+`docker-compose.yml` bind-mounts them **read-only** at `/home/dev/bags`; override the
+host path with `GO2_BAGS=/path/to/bags`.
+
+```bash
+./run.sh build          # adds open3d + ultralytics + CPU torch (Phase-10 layer)
+./run.sh up
+
+# Inside the container:
+cd ~/ros2_ws && colcon build && source install/setup.bash
+
+# 1. Stream tracks to the terminal
+ros2 run fusion_lab replay_bag.py \
+    --bag /home/dev/bags/social_fusion_20260703_161444 \
+    --start 2 --stop 20
+
+# 2. Render the annotated frames + mp4 shown above
+ros2 run fusion_lab visualize_replay.py \
+    --bag /home/dev/bags/social_fusion_20260703_161444 \
+    --start 2 --stop 7 --out outputs/perception_replay_early
+```
+
+`replay_bag.py` prints one row per track per frame: id, position, velocity, speed,
+`pos_std` / `vel_std`, age, and whether it is coasting. `visualize_replay.py` writes
+PNGs plus an mp4 to `outputs/` (gitignored — reproducible from the bag).
+
+YOLO weights are baked into the image at `/opt/models/yolov8n.pt`, so replay is fully
+offline and reproducible; it never downloads a model mid-run.
+
+### Verify gate
+
+`replay_bag.py` reports a sane track stream: stable ids, speeds around 0.5–1.5 m/s for
+walking people, `pos_std` ≈ 0.30 m when measured and growing while coasting. Over the
+full bag: 360 frames, 13 distinct ids. The rendered frames show LiDAR points landing on
+the people and tracks following them in the bird's-eye view.
+
+### Known data facts — do NOT "fix" these
+
+- **~0.2–0.4 m radial lag.** The deskewed cloud aggregates returns over the preceding
+  few hundred ms, so an approaching person reads slightly *behind* true position. It is
+  a sensor artifact, not a filter defect; correcting it in the producer would bake a
+  bag-specific fudge into the pipeline.
+- **Stationary-robot assumption.** odom-frame aggregation assumes the robot does not
+  move (every validation bag is stationary), so the odom→velo transform is computed
+  once. Under robot motion it must be re-derived per frame from odometry.
+- **Quiet stretch, t ≈ 6–23 s.** No tracks for ~17 s. This is the bag, not a bug — YOLO
+  reports zero people in that window (they walked out of view) and fusion re-acquires
+  them the moment they return.
+
+### Deliberately deferred
+
+- **No live `rclpy` perception node.** It drags in the Foxy (robot) vs Humble (dev)
+  version question, so it waits for hardware access. The producer core is
+  framework-agnostic precisely so that node is a thin wrapper when it comes.
+- **`stub_brain` still consumes `/people`,** not `Track`. It migrates when the IT2-FLS
+  lands (Phase 7).
+- **`open3d` / `ultralytics` are painful on Jetson arm64** — the eventual on-robot node
+  will likely need a different clustering backend.

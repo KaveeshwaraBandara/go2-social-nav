@@ -244,6 +244,51 @@ RUN mkdir -p /opt/champ_ws/src && cd /opt/champ_ws/src \
     && rm -rf /opt/champ_ws/build /opt/champ_ws/log
 RUN chown -R ${USER_UID}:${USER_GID} /opt/champ_ws
 
+# ---- pip: real-perception deps (Phase 10) -----------------------------------
+# The bag -> fusion -> tracker producer. ADDITIVE and placed LAST of the deps so
+# it cannot invalidate the expensive HuNav/TEB/CHAMP source builds above.
+#
+#   open3d      -- DBSCAN clustering + RANSAC ground removal (fusion_lab/lidar.py).
+#   ultralytics -- YOLOv8 2D detector (fusion_lab/detection.py).
+#
+# torch is installed FIRST and explicitly from the CPU index: ultralytics would
+# otherwise pull the default PyPI torch, which is the CUDA build (~2.5 GB of
+# nvidia libs) — useless on this Intel-iGPU laptop and a waste on any host that
+# only replays bags. Offline fusion is not compute-bound.
+RUN pip3 install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu \
+        torch torchvision
+
+# numpy<2 re-pinned: ultralytics/open3d would happily pull NumPy 2.x and break
+# the ABI of the apt scipy/pandas compiled against 1.x (same reason as Phase 9).
+#
+# packaging>=24 is NOT cosmetic — it repairs a regression this layer would
+# otherwise cause. Installing torch/ultralytics upgrades setuptools, and modern
+# setuptools calls packaging's canonicalize_version(strip_trailing_zero=...),
+# a kwarg the apt-shipped packaging (21.x) does not have. The result is that
+# ament_cmake_python's egg step dies with
+#     TypeError: canonicalize_version() got an unexpected keyword argument
+# and `colcon build` FAILS on every ament_python_install_package package
+# (tracking, fusion_lab) — i.e. adding perception deps would silently break the
+# workspace build. Upgrading packaging to match setuptools fixes it.
+RUN pip3 install --no-cache-dir \
+        "numpy<2" \
+        "packaging>=24.0" \
+        open3d \
+        ultralytics
+
+# Bake the YOLO weights into the image. Ultralytics otherwise downloads them on
+# first inference, which makes an offline bag replay silently depend on the
+# network and on whatever is newest upstream — neither belongs in a result you
+# have to reproduce. Pinned asset, fixed path.
+RUN mkdir -p /opt/models \
+    && curl -fsSL -o /opt/models/yolov8n.pt \
+        https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt \
+    && chmod -R a+rX /opt/models
+# Ultralytics writes settings/fonts at runtime; point it somewhere writable so a
+# non-root user does not trip over a read-only HOME.
+ENV YOLO_CONFIG_DIR=/tmp/Ultralytics \
+    GO2_YOLO_WEIGHTS=/opt/models/yolov8n.pt
+
 # ---- Entry point + interactive shell setup ---------------------------------
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

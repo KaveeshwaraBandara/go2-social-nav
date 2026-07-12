@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>tracking</name>
+  <version>0.1.0</version>
+  <description>
+    THE CANONICAL TRACK CONTRACT — the single seam every perception producer
+    emits and the IT2-FLS controller consumes. `Track` (track.py) is a frozen
+    stdlib dataclass carrying position, velocity, heading, uncertainty
+    (pos_std/vel_std, which the interval type-2 fuzzifier needs) and staleness.
+
+    Also ships the framework-agnostic tracker that turns per-frame Detection3D
+    into Tracks: data association + constant-velocity Kalman + lifecycle.
+
+    DELIBERATELY DEPENDENCY-FREE: pure Python stdlib. No rclpy, no numpy, no
+    fusion_lab. That is what lets one type survive Foxy (robot) / Humble (dev) /
+    Jazzy (lab) unchanged, and it is why the sim and hardware paths can stay
+    interface-identical. Do not add dependencies to this package.
+  </description>
+  <maintainer email="imanchanabandara@gmail.com">imanchana</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
