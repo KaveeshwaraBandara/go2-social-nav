@@ -31,3 +31,8 @@ outputs/
 .idea/
 .DS_Store
 Claude.MD
+
+# Real-Jetson captures (bags + harvested dumps, ~5.8 GB). Evidence base for
+# docs/; lives on the bench, never in the repo.
+captures/
+scripts/
