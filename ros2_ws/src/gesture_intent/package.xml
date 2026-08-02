@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>gesture_intent</name>
+  <version>0.1.0</version>
+  <description>
+    THE CANONICAL GESTURE-INTENT CONTRACT — the second seam into the IT2-FLS,
+    sibling of `tracking`. `GestureIntent` (intent.py) is a frozen stdlib
+    dataclass carrying the recognised command, the operator's identity and
+    bearing, the armed state, and TWO confidences (gesture_confidence,
+    operator_confidence) which the interval type-2 fuzzifier consumes as
+    footprint-of-uncertainty inputs.
+
+    The rule this type exists to enforce: a gesture producer emits intent and
+    NEVER velocity. The IT2-FLS is the sole publisher to /cmd_vel, because the
+    whole research contribution is that the same gesture means different things
+    in different social contexts.
+
+    DELIBERATELY DEPENDENCY-FREE: pure Python stdlib. No rclpy, no numpy, no
+    mediapipe, no gesture_lab. That is what lets one type survive Foxy (robot) /
+    Humble (dev) / Jazzy (lab) unchanged, and what lets it be shared verbatim
+    with the upstream gesture repo. Do not add dependencies to this package.
+  </description>
+  <maintainer email="imanchanabandara@gmail.com">imanchana</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

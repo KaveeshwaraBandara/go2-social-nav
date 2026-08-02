@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>gesture_lab</name>
+  <version>0.1.0</version>
+  <description>
+    THE GESTURE-INTENT PRODUCER (Phase 11). Webcam -> MediaPipe pose + hand
+    landmarks -> pose-based operator lock -> 12-frame motion/shape window ->
+    RandomForest -> GestureIntent.
+
+    Vendored from Lasan-Perera/go2-gesture-control (pinned at a0c9bdc); every
+    deliberate divergence is marked "DOWNSTREAM CHANGE" in the source and listed
+    in gesture_lab/__init__.py. intent_adapter.py is ours: it is the only file
+    that constructs the contract object, and the only one testable without a
+    camera.
+
+    It emits the canonical `GestureIntent` contract (package gesture_intent) and
+    NOTHING else — never a Twist. Dependency direction is one-way:
+    gesture_lab -> gesture_intent. The IT2-FLS controller never imports this
+    package, and this package never imports the controller.
+
+    NO rclpy anywhere — not even lazily. scripts/run_gesture.py is a DRIVER, not
+    a node: it neither publishes nor subscribes. The live node is deferred until
+    the transport question (Foxy robot / Humble dev / Jazzy lab) is settled,
+    exactly as it was for the perception producer.
+  </description>
+  <maintainer email="imanchanabandara@gmail.com">imanchana</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <!-- The canonical gesture-intent contract. The ONLY ROS-workspace package
+       gesture_lab depends on. -->
+  <exec_depend>gesture_intent</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+
+  <!-- Vision + classifier runtime. Installed by pip in the Phase-11 Dockerfile
+       layer (mediapipe, opencv-python, scikit-learn, joblib) rather than by
+       rosdep: none of them have usable ROS-distro apt packages, and mediapipe
+       and opencv-python are already shared with go2_gesture's Phase-9 layer. -->
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

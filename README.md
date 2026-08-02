@@ -34,6 +34,8 @@ docker/
 ros2_ws/src/        # our ROS 2 packages (live bind-mount into the container)
   tracking/         # THE canonical Track contract + tracker (pure stdlib, no ROS)
   fusion_lab/       # real-perception producer: LiDAR+camera fusion, bag replay
+  gesture_intent/   # THE canonical GestureIntent contract (pure stdlib, no ROS)
+  gesture_lab/      # gesture-intent producer: pose-locked operator + classifier
 docs/images/        # showcase stills used by this README
 docker-compose.yml  # service def: host net, X11, /dev/dri, bind-mounts (incl. bags)
 run.sh              # wrapper: X11 grant/revoke + compose build/up/shell/down
@@ -223,6 +225,15 @@ agents spawn, walk (agent1 moved ~2.6 m in 5 s), and `/people` streams live.
   tracked people — `bag → fusion → tracker → Track` — runnable at the desk with no
   robot. Verified **bit-for-bit against the fusion-lab bench**. Perception plumbing
   only: no controller work, and `stub_brain` is unchanged. See below.
+- **Phase 11 — Gesture-intent producer + the canonical intent contract. 🚧 In
+  progress (blocked on the trained model).** Two new packages: `gesture_intent`
+  (the frozen `GestureIntent` contract, pure stdlib — the exact sibling of
+  `tracking`) and `gesture_lab` (the producer, vendored from the team's
+  `go2-gesture-control` repo). Recognises *which semantic command an enrolled
+  operator gave* — COME / FOLLOW / STOP / STAY / BACK OFF / RELEASE — and emits
+  **intent, never velocity**. Contract, adapter and Docker layer are done and
+  self-tested; the trained classifier (`gesture_model.pkl`) is not in either repo
+  yet, so live recognition cannot run. See below.
 
 ### Run Go2 in the HuNavSim cafe (Phase 4)
 
@@ -723,3 +734,133 @@ the people and tracks following them in the bird's-eye view.
   lands (Phase 7).
 - **`open3d` / `ultralytics` are painful on Jetson arm64** — the eventual on-robot node
   will likely need a different clustering backend.
+
+---
+
+## Gesture-intent producer (Phase 11) 🚧
+
+The second producer feeding the IT2-FLS. Where Phase 10 answers *"where are the
+people and how fast are they moving"*, this answers *"what did my operator just
+tell me to do, and how sure am I that it was them"*.
+
+Vendored from the team's `go2-gesture-control` repo (pinned at `a0c9bdc`), which
+is a standalone Python project with no ROS in it at all.
+
+### This is NOT the Phase-9 gesture teleop
+
+Both use a webcam and MediaPipe; they are otherwise opposites, and both stay.
+
+|  | `go2_gesture` (Phase 9) | `gesture_lab` (Phase 11) |
+|---|---|---|
+| Output | `Twist` on `/cmd_vel` @ 20 Hz | `GestureIntent` — no velocity, ever |
+| Classifier | TFLite MLP, one frame, static sign | RandomForest over a 12-frame motion+shape window |
+| Vocabulary | forward / back / left / right | COME / FOLLOW / STOP / STAY / BACK OFF / RELEASE / NONE |
+| Operator | any hand in frame | one pose-locked, enrolled operator |
+| Role | manual driving tool | perception input to the controller |
+
+Phase 9 is teleoperation: a fixed gesture→motion lookup table. Phase 11 exists to
+move past exactly that — the whole point of the fuzzy layer is that COME in an
+empty corridor and COME in a crowd produce *different* motion, which a lookup
+table deletes before the controller ever sees it.
+
+**They cannot run at the same time** — only one process can hold `/dev/video0`.
+
+### The contract
+
+`gesture_intent/intent.py`, the exact sibling of `tracking/track.py`: a frozen,
+pure-stdlib dataclass, no ROS, no numpy, no mediapipe.
+
+```python
+GestureIntent(
+    label,                # COME / FOLLOW / STOP / STAY / BACK OFF / RELEASE / NONE
+    gesture_confidence,   # classifier probability   ─┐ the two footprint-of-
+    operator_confidence,  # how sure it was YOUR hand ─┘ uncertainty inputs
+    operator_id,          # -1 = nobody; changes mean a DIFFERENT person
+    operator_bearing,     # radians, + is the robot's left
+    armed,                # was the system listening
+    timestamp, frame_id,
+)
+```
+
+**Both confidences travel as numbers and are never thresholded to a yes/no.**
+Same argument that put `pos_std`/`vel_std` on `Track`: the *interval* type-2
+fuzzifier sizes its footprint of uncertainty from them. A producer that collapsed
+them to a boolean would hand the controller a constant, and an IT2 system fed
+constant uncertainty is a type-1 system with extra steps.
+
+There is deliberately **no `operator_distance`** — metric range is the perception
+producer's job, and the controller already receives the operator as a `Track`
+with real metres. A monocular hand pipeline can only offer a palm-size proxy, and
+a field belongs on a contract only if every producer can honestly emit it.
+
+### How recognition works
+
+- **Windowed motion, not single frames.** 12 consecutive frames per decision, so
+  a beckon or a push is representable at all — a per-frame classifier structurally
+  cannot represent them. Displacements are divided by palm size, so a gesture at
+  1 m and at 2 m look the same.
+- **Finger count separates the motion-ambiguous pair.** STOP (fist→open) and
+  BACK OFF (open→open) are identical in motion space; `nfing[-1] − nfing[0]` is
+  **+4** for STOP and **~0** for BACK OFF, and nothing else in the vocabulary
+  changes finger count.
+- **STOP is asymmetric on purpose.** It fires at 0.20 probability even when
+  another label scored higher: a missed STOP on a walking 15 kg robot is far worse
+  than a spurious one. **So a STOP may arrive with a low confidence — downstream
+  must not read that as "probably not a stop".**
+- **The operator lock is pose-based, not face-based.** Pose gives every person's
+  wrists; each hand is matched to the nearest *operator* wrist and hands that
+  belong to nobody's operator body are discarded. A bystander waving is ignored
+  even standing shoulder-to-shoulder. No facial biometrics — which also
+  materially simplifies ethics approval for the human study.
+- Upstream reports **cross-validated macro F1 = 0.864 ± 0.018**, split by subject
+  (71 subjects) — a genuine "works on someone unseen" number.
+
+### Blocked: the trained model is not in either repo
+
+`gesture_model.pkl` is excluded by upstream's `.gitignore`, so **live recognition
+cannot run yet**. Get the file (and the exact scikit-learn version it was trained
+with) from the gesture repo owner and drop it in — `ros2_ws` is bind-mounted, so
+no rebuild is needed:
+
+```
+ros2_ws/src/gesture_lab/model/gesture_model.pkl
+```
+
+See `ros2_ws/src/gesture_lab/model/README.md`. The producer **refuses to start**
+without it rather than falling back to upstream's rule-based classifier, which
+emits an older, off-contract vocabulary ("TURN RIGHT", "MOVE FORWARD"). Confident,
+well-formed, meaningless intents are the worst available failure mode.
+
+### Verify gate (runs today, no model and no camera)
+
+```bash
+# Inside the container:
+ros2 run gesture_lab run_gesture.py --selftest
+```
+
+Covers the contract and the intent adapter — the code this repo owns — including
+the bearing sign convention through the mirrored frame, the pinhole projection at
+the FOV edge, the operator-confidence map, immutability, and rejection of
+off-contract labels. It says **nothing** about recognition accuracy; that needs
+the model and a human in front of a camera.
+
+Once the model lands:
+
+```bash
+ros2 run gesture_lab run_gesture.py     # webcam + display; prints GestureIntent
+```
+
+### Deliberately deferred
+
+- **No live `rclpy` node**, for the same reason Phase 10 deferred its own: the
+  transport question (Foxy robot / Humble dev / Jazzy lab) is not this phase's
+  problem, and the producer core is framework-agnostic so that node is a thin
+  wrapper when it comes. `run_gesture.py` is a *driver*, not a node — it publishes
+  and subscribes to nothing.
+- **Nothing consumes `GestureIntent` yet.** Wiring it into a controller is
+  Phase 7 work.
+- **Viewpoint transfer is unmeasured** — the classifier is trained entirely on
+  eye-level, front-facing webcam footage, while the robot's D435i sits ~50 cm up
+  with a ~20° upward tilt and moves. The Phase-10 bags are RGB and already
+  bind-mounted, so a first transfer number is cheap to obtain.
+- **Jetson deployment unvalidated** — MediaPipe has no official aarch64 wheel.

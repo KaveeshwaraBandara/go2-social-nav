@@ -289,6 +289,61 @@ RUN mkdir -p /opt/models \
 ENV YOLO_CONFIG_DIR=/tmp/Ultralytics \
     GO2_YOLO_WEIGHTS=/opt/models/yolov8n.pt
 
+# ---- pip: gesture-intent deps (Phase 11) -----------------------------------
+# The camera -> pose lock -> window -> RandomForest -> GestureIntent producer
+# (package gesture_lab). ADDITIVE and placed LAST of all the deps, after the
+# perception layer, so it cannot invalidate the expensive HuNav/TEB/CHAMP source
+# builds or the torch/ultralytics download above.
+#
+# mediapipe, opencv-python and numpy<2 are NOT repeated here — the Phase-9
+# gesture layer near the top of this file already installs them, and gesture_lab
+# uses the same MediaPipe Tasks API that go2_gesture does. Only the classifier
+# half is new:
+#
+#   scikit-learn -- the RandomForest that gesture_model.py unpickles
+#   joblib       -- how train_gestures.py serialised the bundle
+#
+# PIN THIS. A joblib bundle is a pickle of fitted sklearn estimator objects, and
+# loading one under a materially different sklearn version either warns and
+# quietly mispredicts or fails to unpickle at all. The version below MUST match
+# whatever trained gesture_model.pkl; it is unpinned only because that model has
+# not been handed over yet. Set it the moment the .pkl arrives.
+# (Failure is at least loud: load_model() catches the exception, returns None,
+# and run() then refuses to start rather than falling back to an off-contract
+# rule classifier. See ros2_ws/src/gesture_lab/model/README.md.)
+ARG SKLEARN_SPEC="scikit-learn"
+RUN pip3 install --no-cache-dir "${SKLEARN_SPEC}" joblib
+
+# Bake the MediaPipe .task bundles, same reasoning as the YOLO weights: pinned
+# assets at fixed paths, so a run never silently depends on the network or on
+# whatever Google publishes next. 17 MB of binary blobs also do not belong in
+# the repo. float16/1 is the revision upstream's README pins.
+#
+# hand_landmarker is duplicated from go2_gesture's in-repo copy on purpose:
+# that package is a working, merged Phase-9 deliverable and is not being
+# modified to share a path with a new one (one component per phase).
+#
+# pose_landmarker_full drives the OPERATOR LOCK — it is what makes single-
+# operator control real, by giving every visible person's wrists so a hand can
+# be proven to belong to the enrolled operator rather than a bystander. If the
+# Orin NX turns out too slow for `full`, the documented fallback is `lite` plus
+# a One-Euro filter, which is why the lite bundle is fetched too.
+RUN curl -fsSL -o /opt/models/hand_landmarker.task \
+        https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task \
+    && curl -fsSL -o /opt/models/pose_landmarker_full.task \
+        https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task \
+    && curl -fsSL -o /opt/models/pose_landmarker_lite.task \
+        https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task \
+    && chmod -R a+rX /opt/models
+
+# The gesture model itself is NOT baked: it is the trained artifact of the
+# research, so it is versioned in the repo next to the code that defines its
+# feature layout (the same argument that keeps go2_calib.npz in git). ros2_ws is
+# bind-mounted, so dropping the .pkl in needs no rebuild.
+ENV GO2_HAND_LANDMARKER=/opt/models/hand_landmarker.task \
+    GO2_POSE_LANDMARKER=/opt/models/pose_landmarker_full.task \
+    GO2_GESTURE_MODEL=/home/dev/ros2_ws/src/gesture_lab/model/gesture_model.pkl
+
 # ---- Entry point + interactive shell setup ---------------------------------
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
