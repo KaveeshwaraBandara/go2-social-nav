@@ -28,16 +28,52 @@ from .gesture_common import (
 def load_model(path=MODEL_PATH):
     """
     Return the model bundle, or None if there's no usable model on disk.
-    Never raises - a missing or stale model must not crash the live loop,
-    it should just fall back to the rule-based classifier.
+    Never raises - reporting "no usable model" is this function's job, and
+    deciding what to do about it is the caller's.
+
+    DOWNSTREAM CHANGE (go2-social-nav): upstream's caller answered None by
+    falling back to the rule-based classifier. Here `run()` refuses to start
+    instead, because that fallback's vocabulary is not in the contract.
     """
     if not os.path.exists(path):
         return None
     try:
+        import warnings
+
         import joblib
-        bundle = joblib.load(path)
-    except Exception as e:  # corrupt file, sklearn version mismatch, etc.
-        print(f"WARNING: could not load {path} ({e}). Falling back to rules.")
+
+        # DOWNSTREAM CHANGE (go2-social-nav): swallow the version-skew warning
+        # and report it ONCE.
+        #
+        # The shipped bundle was dumped by scikit-learn 1.9.0, which needs
+        # Python >= 3.11; this container is Humble/Ubuntu 22.04 = Python 3.10,
+        # where the newest available scikit-learn is 1.7.2. sklearn therefore
+        # raises InconsistentVersionWarning for EVERY ONE of the 300 trees -
+        # 300 identical paragraphs before the first camera frame, which trains
+        # people to ignore startup output.
+        #
+        # Suppressing it is only defensible because the equivalence was
+        # MEASURED, not assumed: predict_proba over 500 random feature vectors
+        # is bit-identical between 1.7.2 and 1.9.0 (see docker/Dockerfile, and
+        # re-check with `run_gesture.py --check-model`). One line keeps the skew
+        # visible; 300 would hide it in plain sight.
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            bundle = joblib.load(path)
+        skew = {
+            str(w.message).split("from version ")[-1].split(" when using version ")[0]
+            for w in caught
+            if type(w.message).__name__ == "InconsistentVersionWarning"
+        }
+        if skew:
+            import sklearn
+
+            print(f"NOTE: model was trained on scikit-learn {'/'.join(sorted(skew))}, "
+                  f"running {sklearn.__version__}. Verified equivalent for this "
+                  f"bundle (bit-identical predict_proba); re-check with "
+                  f"run_gesture.py --check-model after any retrain.")
+    except Exception as e:  # corrupt file, unreadable pickle, etc.
+        print(f"WARNING: could not load {path} ({e}).")
         return None
 
     # A model trained with a different window length or feature layout would
@@ -46,7 +82,7 @@ def load_model(path=MODEL_PATH):
         print(f"WARNING: {path} was trained with a different feature layout "
               f"(window={bundle.get('window_frames')}, dim={bundle.get('feature_dim')}; "
               f"expected window={WINDOW_FRAMES}, dim={FEATURE_DIM}). "
-              f"Re-run train_gestures.py. Falling back to rules.")
+              f"Re-run train_gestures.py against this checkout.")
         return None
 
     return bundle

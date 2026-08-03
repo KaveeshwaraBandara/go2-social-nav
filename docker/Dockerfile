@@ -303,15 +303,29 @@ ENV YOLO_CONFIG_DIR=/tmp/Ultralytics \
 #   scikit-learn -- the RandomForest that gesture_model.py unpickles
 #   joblib       -- how train_gestures.py serialised the bundle
 #
-# PIN THIS. A joblib bundle is a pickle of fitted sklearn estimator objects, and
-# loading one under a materially different sklearn version either warns and
-# quietly mispredicts or fails to unpickle at all. The version below MUST match
-# whatever trained gesture_model.pkl; it is unpinned only because that model has
-# not been handed over yet. Set it the moment the .pkl arrives.
-# (Failure is at least loud: load_model() catches the exception, returns None,
-# and run() then refuses to start rather than falling back to an off-contract
-# rule classifier. See ros2_ws/src/gesture_lab/model/README.md.)
-ARG SKLEARN_SPEC="scikit-learn"
+# PINNED, and NOT to the version that trained the model. The reasoning matters,
+# because the obvious pin does not install:
+#
+#   gesture_model.pkl was dumped by scikit-learn 1.9.0 (recorded in the pickle).
+#   scikit-learn >= 1.8 requires Python >= 3.11 and ships no cp310 wheel.
+#   This image is ROS 2 Humble = Ubuntu 22.04 = Python 3.10.
+#   The newest scikit-learn with a cp310 wheel is 1.7.2.
+#
+# So the trained artifact and the runtime CANNOT share a version here. That is
+# normally the setup for silent misprediction, so it was measured rather than
+# assumed: loading the 1.9.0 bundle under 1.7.2 and comparing predict_proba over
+# 500 random 101-d feature vectors gives a max absolute difference of EXACTLY
+# 0.0, and identical argmax on all 500 rows. The RandomForest/DecisionTree
+# pickle internals did not change between 1.7.2 and 1.9.0.
+#
+# sklearn still raises InconsistentVersionWarning once PER TREE (300 of them) on
+# load; gesture_model.load_model() suppresses the spam and prints one line
+# instead, so the skew stays visible without drowning the startup log.
+#
+# RE-MEASURE THIS if the model is ever retrained (the check lives in
+# `ros2 run gesture_lab run_gesture.py --check-model`). The alternative, if a
+# future dump does diverge, is to ask for a bundle trained on 1.7.2.
+ARG SKLEARN_SPEC="scikit-learn==1.7.2"
 RUN pip3 install --no-cache-dir "${SKLEARN_SPEC}" joblib
 
 # Bake the MediaPipe .task bundles, same reasoning as the YOLO weights: pinned

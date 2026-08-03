@@ -18,6 +18,16 @@ ros2_ws/**/bags/
 # CWD on first use, which must never be committed.
 *.pt
 
+# Trained gesture classifier (Phase 11). 90 MB: a 300-tree, unlimited-depth
+# RandomForest, which is two orders of magnitude past the "small, code-adjacent"
+# test that keeps go2_calib.npz (2 kB) in the repo. It lives on the bench and is
+# bind-mounted in with ros2_ws, exactly like the rosbags and the YOLO weights.
+#
+# CONSEQUENCE, on purpose: the model does NOT travel with a clone. A fresh
+# checkout gets the code and a loud error from load_model() pointing at
+# ros2_ws/src/gesture_lab/model/README.md, not a silent wrong answer.
+*.pkl
+
 # Rendered perception replays (annotated PNGs + mp4, ~100 MB per run). Fully
 # reproducible from the bag via `ros2 run fusion_lab visualize_replay.py`, so
 # they are artifacts, not source. The few showcase stills used by README are
@@ -32,7 +42,14 @@ outputs/
 .DS_Store
 Claude.MD
 
-# Real-Jetson captures (bags + harvested dumps, ~5.8 GB). Evidence base for
-# docs/; lives on the bench, never in the repo.
-captures/
-scripts/
+# Real-Jetson captures (bags + harvested dumps, ~5.8 GB) and the harvesting
+# scripts that produced them. Evidence base for docs/; lives on the bench.
+#
+# ANCHORED with a leading slash — these mean the REPO-ROOT captures/ and
+# scripts/ only. Unanchored, `scripts/` matches a directory of that name at ANY
+# depth, which silently swallowed ros2_ws/src/gesture_lab/scripts/run_gesture.py
+# (it never reached commit c393e86) and would do the same to any new file under
+# fusion_lab/scripts/ — those two are tracked only because they predate this
+# rule, and git keeps ignoring rules from applying to already-tracked files.
+/captures/
+/scripts/

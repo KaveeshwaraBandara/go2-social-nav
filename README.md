@@ -225,15 +225,14 @@ agents spawn, walk (agent1 moved ~2.6 m in 5 s), and `/people` streams live.
   tracked people — `bag → fusion → tracker → Track` — runnable at the desk with no
   robot. Verified **bit-for-bit against the fusion-lab bench**. Perception plumbing
   only: no controller work, and `stub_brain` is unchanged. See below.
-- **Phase 11 — Gesture-intent producer + the canonical intent contract. 🚧 In
-  progress (blocked on the trained model).** Two new packages: `gesture_intent`
+- **Phase 11 — Gesture-intent producer + the canonical intent contract. ✅ Built,
+  desk-verified; live-camera gate pending.** Two new packages: `gesture_intent`
   (the frozen `GestureIntent` contract, pure stdlib — the exact sibling of
   `tracking`) and `gesture_lab` (the producer, vendored from the team's
   `go2-gesture-control` repo). Recognises *which semantic command an enrolled
   operator gave* — COME / FOLLOW / STOP / STAY / BACK OFF / RELEASE — and emits
-  **intent, never velocity**. Contract, adapter and Docker layer are done and
-  self-tested; the trained classifier (`gesture_model.pkl`) is not in either repo
-  yet, so live recognition cannot run. See below.
+  **intent, never velocity**. Two desk verify gates pass with no camera; the
+  trained model is on the bench (gitignored, 90 MB). See below.
 
 ### Run Go2 in the HuNavSim cafe (Phase 4)
 
@@ -815,40 +814,56 @@ a field belongs on a contract only if every producer can honestly emit it.
 - Upstream reports **cross-validated macro F1 = 0.864 ± 0.018**, split by subject
   (71 subjects) — a genuine "works on someone unseen" number.
 
-### Blocked: the trained model is not in either repo
+### The trained model is on the bench, not in git
 
-`gesture_model.pkl` is excluded by upstream's `.gitignore`, so **live recognition
-cannot run yet**. Get the file (and the exact scikit-learn version it was trained
-with) from the gesture repo owner and drop it in — `ros2_ws` is bind-mounted, so
-no rebuild is needed:
+`gesture_model.pkl` lives at `ros2_ws/src/gesture_lab/model/` and is
+**gitignored** — it is 90 MB (300 trees, unlimited depth), far past the "small,
+code-adjacent" test that keeps `go2_calib.npz` versioned. It is bind-mounted into
+the container with `ros2_ws`, like the rosbags.
 
-```
-ros2_ws/src/gesture_lab/model/gesture_model.pkl
-```
+**A fresh clone does not get it** and will fail loudly: the producer *refuses to
+start* without a model rather than falling back to upstream's rule-based
+classifier, which emits an older, off-contract vocabulary ("TURN RIGHT", "MOVE
+FORWARD"). Confident, well-formed, meaningless intents are the worst available
+failure mode. See `ros2_ws/src/gesture_lab/model/README.md`.
 
-See `ros2_ws/src/gesture_lab/model/README.md`. The producer **refuses to start**
-without it rather than falling back to upstream's rule-based classifier, which
-emits an older, off-contract vocabulary ("TURN RIGHT", "MOVE FORWARD"). Confident,
-well-formed, meaningless intents are the worst available failure mode.
+**One non-obvious thing:** the bundle was dumped by scikit-learn 1.9.0, which
+needs Python ≥ 3.11, while this container is Humble = Ubuntu 22.04 = Python 3.10,
+where the newest scikit-learn is 1.7.2. Training and runtime versions cannot
+match here, so the equivalence was *measured*: `predict_proba` over 500 random
+feature vectors is **bit-identical** between the two (max abs difference exactly
+0.0, same argmax on 500/500 rows). The image pins `scikit-learn==1.7.2`.
+Re-measure after any retrain with `--check-model`.
 
-### Verify gate (runs today, no model and no camera)
+### Verify gates
 
 ```bash
 # Inside the container:
+
+# 1. Contract + intent adapter. No camera, no model, no sklearn/mediapipe.
 ros2 run gesture_lab run_gesture.py --selftest
+
+# 2. The trained model + the real inference path. No camera.
+ros2 run gesture_lab run_gesture.py --check-model
+
+# 3. The live producer — webcam + display; prints one GestureIntent per gesture.
+ros2 run gesture_lab run_gesture.py
 ```
 
-Covers the contract and the intent adapter — the code this repo owns — including
-the bearing sign convention through the mirrored frame, the pinhole projection at
-the FOV edge, the operator-confidence map, immutability, and rejection of
-off-contract labels. It says **nothing** about recognition accuracy; that needs
-the model and a human in front of a camera.
+Gate 1 covers the bearing sign convention through the mirrored frame, the pinhole
+projection at the FOV edge, the operator-confidence map, immutability, and
+rejection of off-contract labels. Gate 2 covers the joblib load, window/feature
+layout agreement, that the model's classes *are* the contract's vocabulary, the
+STOP override and NONE suppression.
 
-Once the model lands:
+**Neither says anything about recognition accuracy** — that is gate 3, with a
+human. In the live window: hold a **full open palm** still to enrol and arm (your
+skeleton turns green), perform gestures, hold a **tight fist** to disarm, `r` to
+release the lock, `q` to quit. The webcam and X11 mappings from Phase 9 already
+cover this; nothing new is needed in `docker-compose.yml`.
 
-```bash
-ros2 run gesture_lab run_gesture.py     # webcam + display; prints GestureIntent
-```
+> Only one process can hold `/dev/video0`, so stop `go2_gesture`'s teleop node
+> before starting this.
 
 ### Deliberately deferred
 
