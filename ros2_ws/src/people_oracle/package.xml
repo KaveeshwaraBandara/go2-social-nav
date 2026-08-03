@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>people_oracle</name>
+  <version>0.1.0</version>
+  <description>
+    THE GROUND-TRUTH PERCEPTION PRODUCER (Phase 12). Converts HuNavSim's
+    `people_msgs/People` into the canonical `Track` contract, so the simulated
+    and real perception paths present the controller with ONE type.
+
+    It is the upper bound: identity is never lost, position is never wrong,
+    nothing ever coasts. Any gap between the controller's behaviour on these
+    tracks and on real fusion tracks is therefore attributable to perception,
+    not to the controller.
+
+    A LIBRARY, NOT A NODE. `Track` is an in-process Python contract with no ROS
+    .msg (deliberately — that would couple the controller to a distro), so the
+    consuming node keeps its own /people subscription and hands the message
+    here. NO rclpy, NO numpy, NO people_msgs import: the message is duck-typed,
+    which keeps this pure stdlib and desk-testable.
+
+    NOTE: ground truth has pos_std = vel_std = 0.0. A controller evaluated only
+    against this producer has a degenerate footprint of uncertainty and behaves
+    as type-1. Injectable noise is the next step and is what makes the IT2 claim
+    measurable; it is deliberately not built yet.
+  </description>
+  <maintainer email="imanchanabandara@gmail.com">imanchana</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <!-- The canonical track contract. The ONLY package people_oracle depends on. -->
+  <exec_depend>tracking</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

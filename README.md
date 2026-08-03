@@ -34,6 +34,7 @@ docker/
 ros2_ws/src/        # our ROS 2 packages (live bind-mount into the container)
   tracking/         # THE canonical Track contract + tracker (pure stdlib, no ROS)
   fusion_lab/       # real-perception producer: LiDAR+camera fusion, bag replay
+  people_oracle/    # ground-truth perception producer: HuNav /people -> Track
   gesture_intent/   # THE canonical GestureIntent contract (pure stdlib, no ROS)
   gesture_lab/      # gesture-intent producer: pose-locked operator + classifier
 docs/images/        # showcase stills used by this README
@@ -233,6 +234,14 @@ agents spawn, walk (agent1 moved ~2.6 m in 5 s), and `/people` streams live.
   operator gave* — COME / FOLLOW / STOP / STAY / BACK OFF / RELEASE — and emits
   **intent, never velocity**. Two desk verify gates pass with no camera; the
   trained model is on the bench (gitignored, 90 MB). See below.
+- **Phase 12 — Oracle producer + the controller migrated onto `Track`. ✅ Built,
+  desk-verified; benchmark regression gate pending.** New package `people_oracle`
+  turns HuNav's ground-truth `/people` into `Track`, and `stub_brain` now reads
+  `Track` instead of `people_msgs`. Before this the contract had one producer
+  (the offline bag) and **zero consumers**; it is now the real seam in sim, which
+  is what lets the Phase-7 controller be written against one input type
+  regardless of whether the data came from the simulator or a real sensor. The
+  port was verified bit-identical against the pre-port node. See below.
 
 ### Run Go2 in the HuNavSim cafe (Phase 4)
 
@@ -879,3 +888,97 @@ cover this; nothing new is needed in `docker-compose.yml`.
   with a ~20° upward tilt and moves. The Phase-10 bags are RGB and already
   bind-mounted, so a first transfer number is cheap to obtain.
 - **Jetson deployment unvalidated** — MediaPipe has no official aarch64 wheel.
+
+---
+
+## Oracle producer — the perception seam goes live (Phase 12)
+
+Phase 10 defined `Track` and built a producer for it from recorded sensor data.
+Phase 11 did the same for gestures. But nothing *consumed* either contract: the
+brain still read HuNav's `/people` message directly, so the seam existed on paper
+only.
+
+This phase closes that. `people_oracle` converts ground-truth `/people` into
+`Track`, and `stub_brain` now reads `Track`.
+
+### Why this had to come before the fuzzy controller
+
+The controller should not know or care where people-information came from. Once
+it reads `Track`, the *same* controller runs against HuNav ground truth in sim
+and against real LiDAR+camera fusion on the robot — no branch, no rewrite. That
+property is the whole reason the contract exists, and it was untested until
+something consumed it.
+
+Doing the swap with the *existing* brain rather than with a new controller is
+deliberate: the SFM maths is known-good, so any change in behaviour could only
+come from the new seam. Debugging one new thing beats debugging two.
+
+### A library, not a node
+
+`Track` deliberately has no ROS message type — that would tie the controller to
+one ROS distro, which is the Foxy/Humble/Jazzy problem the contract exists to
+dodge. So there is no topic to publish tracks on.
+
+Instead the controller keeps its `/people` subscription (a ROS node has to get
+bytes from somewhere) and converts at the boundary, in one line of `people_cb`.
+The `People` type never reaches the control loop. `people_oracle` itself imports
+neither `rclpy` nor `people_msgs` — the message is duck-typed — so it stays pure
+stdlib and runs unchanged on any distro.
+
+### Oracle-specific choices
+
+- **`z` is a nominal 0.9 m.** HuNav packs each agent's *yaw* into `position.z`,
+  so reading it as a height would put every pedestrian a few radians tall.
+- **Heading** is `atan2(vy, vx)` while walking, and HuNav's true facing yaw when
+  standing still. A real tracker holds its last confident value there; the oracle
+  has the actual answer, which is what that held value approximates.
+- **Identity is never lost.** An agent that leaves and returns keeps its id. A
+  real tracker would issue a new one — and that difference *is* the perception
+  error this producer exists to bound.
+
+### The trap it creates — important for Phase 7
+
+Ground truth has **`pos_std = vel_std = 0.0`**.
+
+The interval type-2 fuzzifier sizes its footprint of uncertainty from exactly
+those two numbers. So a controller evaluated *only* against this producer has a
+degenerate footprint and quietly behaves as a plain type-1 system — the exact
+collapse the contract was designed to prevent, this time caused by the benchmark
+rather than by the message type.
+
+**Injectable noise is therefore load-bearing, not a nicety.** It is what makes
+the IT2 claim measurable at all, and it should be calibrated against what the
+real pipeline actually achieves (`pos_std ≈ 0.30 m` measured, growing while
+coasting — the Phase-10 verify gate) rather than a guessed constant. It is
+deliberately not built yet: this phase is the zero-noise identity swap only.
+
+### Verify gates
+
+```bash
+# Inside the container — no ROS graph, no Gazebo, no robot:
+ros2 run people_oracle check_oracle.py
+```
+
+Checks exact position pass-through, the yaw-in-`z` quirk, the ground-truth
+invariants (`pos_std`/`vel_std` zero, confidence 1.0, never coasting) and
+identity over time.
+
+The real gate is a regression, not a new test — the port must not have changed
+how the robot drives:
+
+```bash
+ros2 launch go2_bench benchmark.launch.py scenario:=head_on controller:=stub record:=true
+ros2 launch go2_bench benchmark.launch.py scenario:=crossing controller:=stub record:=true
+ros2 launch go2_bench benchmark.launch.py scenario:=group    controller:=stub record:=true
+ros2 run go2_bench compare.py
+```
+
+**The stub's metrics should be unchanged.** The control loop only ever used
+`position.x` and `position.y`, and the oracle reproduces both bit-for-bit; a
+differential run of the old and new node over 71 steps — covering free running,
+repulsion, the stop-if-too-close floor, empty scenes and goal-reached — produced
+**identical `/cmd_vel` commands with zero differences**. So a drift in the
+benchmark means the seam is wrong, not the controller.
+
+> Use a fresh container per benchmark run (`docker compose down && up`) — the
+> HuNav agent manager is flaky across rapid back-to-back runs.

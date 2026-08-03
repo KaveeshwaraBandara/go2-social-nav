@@ -7,11 +7,30 @@ IT2-FLS controller (Phase 7) will later swap in for THIS node at the exact same
 interface (/people + /odom in, /cmd_vel out), so nothing around it changes.
 
 Interface (the permanent control contract — see CLAUDE.md):
-  IN   /people  people_msgs/People    ground-truth perception stub (frame: map)
-                                      per agent: position (yaw packed in
-                                      position.z) and velocity.
+  IN   /people  people_msgs/People    HuNav ground truth (frame: map), converted
+                                      IMMEDIATELY to `Track` and never read
+                                      directly — see PERCEPTION SEAM below.
   IN   /odom    nav_msgs/Odometry     the robot's own pose from planar_move.
   OUT  /cmd_vel geometry_msgs/Twist   body-frame velocity command @ 20 Hz.
+
+PERCEPTION SEAM (Phase 12):
+  This node's control maths reads `Track` (package `tracking`), not
+  `people_msgs`. The /people subscription survives only because a ROS node has
+  to get bytes from somewhere; the message is handed straight to `PeopleOracle`
+  and the People type never reaches the control loop.
+
+  That indirection is the point. `Track` is the ONE type every perception
+  producer emits — HuNav ground truth here, LiDAR+camera fusion on hardware —
+  so this controller, and the IT2-FLS that replaces it, work unchanged against
+  either. `Track` is an in-process Python contract with no ROS .msg on purpose
+  (that would couple the controller to a distro), which is why the conversion
+  happens in-process rather than over a topic.
+
+  BEHAVIOURALLY THIS CHANGED NOTHING. The loop below used exactly two fields of
+  each person, `position.x` and `position.y`, and the oracle reproduces both
+  bit-for-bit (people_oracle/scripts/check_oracle.py). The Phase-6 benchmark is
+  therefore expected to return IDENTICAL numbers, and any drift means the seam
+  is wrong, not the controller.
 
 FRAME ASSUMPTION (documented, deliberate):
   /people is in the `map` frame. /odom reports the robot pose in the `odom`
@@ -38,6 +57,11 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from people_msgs.msg import People
+
+# The perception seam. `people_oracle` converts HuNav ground truth into the
+# canonical `Track`; `fusion_lab` produces the same type from real sensors.
+# Neither imports this node, and this node imports neither producer's internals.
+from people_oracle import PeopleOracle
 
 
 def yaw_from_quaternion(q):
@@ -94,7 +118,11 @@ class StubBrain(Node):
         self.robot_x = None        # set once /odom arrives
         self.robot_y = None
         self.robot_yaw = 0.0
-        self.people = []           # list of people_msgs/Person
+        self.tracks = []           # list of tracking.Track — NOT people_msgs
+
+        # The ground-truth producer. Stateful (it owns track ids and ages), so
+        # one instance for the life of the node.
+        self.perception = PeopleOracle()
 
         # --- ROS I/O ---------------------------------------------------------
         self.cmd_pub = self.create_publisher(Twist, "cmd_vel", 10)
@@ -120,7 +148,11 @@ class StubBrain(Node):
         self.robot_yaw = yaw_from_quaternion(msg.pose.pose.orientation)
 
     def people_cb(self, msg):
-        self.people = msg.people
+        # Convert at the BOUNDARY: people_msgs stops here and never reaches the
+        # control loop. Swapping in the live perception producer later means
+        # replacing this one line, not touching the maths below.
+        stamp = self.get_clock().now().nanoseconds * 1e-9
+        self.tracks = self.perception.update(msg, stamp)
 
     # --- The control loop ---------------------------------------------------
     def control_tick(self):
@@ -155,9 +187,9 @@ class StubBrain(Node):
         nearest_dist = float("inf")
         nearest_dx = 0.0
         nearest_dy = 0.0
-        for person in self.people:
-            dx = self.robot_x - person.position.x   # vector pointing away from person
-            dy = self.robot_y - person.position.y
+        for track in self.tracks:
+            dx = self.robot_x - track.x   # vector pointing away from the person
+            dy = self.robot_y - track.y
             dist = math.hypot(dx, dy)
             if dist < 1e-3 or dist > self.repulsion_cutoff:
                 continue  # ignore far / coincident agents (cheap + local)

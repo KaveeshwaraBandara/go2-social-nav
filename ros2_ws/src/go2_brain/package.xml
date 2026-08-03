@@ -5,11 +5,16 @@
   <version>0.1.0</version>
   <description>
     Phase 5 autonomy stub. A single node (stub_brain) that closes the social-nav
-    loop: it consumes the ground-truth /people perception stub and the robot's
-    /odom, runs a basic Social Force Model, and publishes /cmd_vel at 20 Hz.
-    It REPLACES teleop as the /cmd_vel producer and is a deliberately simple
-    placeholder that the IT2-FLS controller (Phase 7) will later swap in for at
-    the exact same /cmd_vel interface.
+    loop: it consumes perception and the robot's /odom, runs a basic Social
+    Force Model, and publishes /cmd_vel at 20 Hz. It REPLACES teleop as the
+    /cmd_vel producer and is a deliberately simple placeholder that the IT2-FLS
+    controller (Phase 7) will later swap in for at the exact same interface.
+
+    Phase 12: its control maths now reads the canonical `Track` contract, not
+    people_msgs. The /people subscription remains, but the message is converted
+    at the boundary by `people_oracle` and the People type never reaches the
+    control loop — so this node, and its IT2-FLS successor, run unchanged
+    against ground truth or against real LiDAR+camera fusion.
   </description>
   <maintainer email="imanchanabandara@gmail.com">imanchana</maintainer>
   <license>BSD</license>
@@ -19,7 +24,13 @@
   <exec_depend>rclpy</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
+  <!-- Still needed for the SUBSCRIPTION type only; the control loop never
+       touches a people_msgs field (see the PERCEPTION SEAM note in the node). -->
   <exec_depend>people_msgs</exec_depend>
+  <!-- The perception seam: the ground-truth producer, and through it the
+       canonical Track contract the control maths actually reads. -->
+  <exec_depend>people_oracle</exec_depend>
+  <exec_depend>tracking</exec_depend>
   <exec_depend>go2_hunav</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
